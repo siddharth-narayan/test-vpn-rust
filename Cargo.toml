@@ -1,0 +1,16 @@
+[package]
+name = "vpn-rs"
+version = "1.0.0"
+edition = "2024"
+
+[[bin]]
+name = "client"
+path = "src/client.rs"
+
+[[bin]]
+name = "server"
+path = "src/server.rs"
+
+[dependencies]
+# example = "1.0.0"
+openssl = { version = "0.10" }

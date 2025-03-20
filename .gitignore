@@ -1,0 +1,10 @@
+.vscode
+
+target/
+
+# Nix
+result*
+result-*
+
+# Misc
+.direnv
