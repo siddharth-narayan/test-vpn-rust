@@ -26,10 +26,13 @@
           src = ./.;
         };
 
-        devShell = pkgs.mkShell {
+        devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs; [
             pkg-config
-            
+            clang
+
+            rustPlatform.bindgenHook
+
             openssl
             
             alejandra

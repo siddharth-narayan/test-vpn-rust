@@ -1,5 +1,5 @@
 .vscode
-
+*.pem
 target/
 
 # Nix

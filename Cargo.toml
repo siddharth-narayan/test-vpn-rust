@@ -11,6 +11,14 @@ path = "src/client.rs"
 name = "server"
 path = "src/server.rs"
 
+[build-dependencies]
+bindgen = "0.69"
+cc = "1.0"
+
 [dependencies]
 # example = "1.0.0"
+tun = "0.7"
+pnet = "0.35.0"
+tokio = { version = "1", features = ["full"] }
+tokio-openssl = "0.6"
 openssl = { version = "0.10" }
