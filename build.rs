@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
 fn main() {
+    println!("Running builder");
     cc::Build::new()
         .file("src/network/network.c")
+        .opt_level(3)
         .compile("network");
 
     let bindings = bindgen::Builder::default()
