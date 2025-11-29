@@ -4,15 +4,18 @@ use std::{
     net::TcpStream, process::exit,
 };
 
-fn client_handshake(stream: &mut SslStream<TcpStream>) -> String{
-    let mut buffer: [u8; 1024] = [0; 1024];
-    stream.read(&mut buffer);
+use crate::protocols::openvpn::config::ClientCli;
 
-    String::from_utf8(buffer.to_vec()).unwrap_or("72.100.100.100".to_string())
+pub fn client_begin(stream: &mut SslStream<TcpStream>) {
+    // let mut buffer: [u8; 1024] = [0; 1024];
+    // stream.read(&mut buffer);
+
+    // String::from_utf8(buffer.to_vec()).unwrap_or("72.100.100.100".to_string())
 }
 
-fn main() {
-    let tcp_stream = TcpStream::connect("127.0.0.1:8080").expect("Failed to connect to server.");
+pub fn start_client(config: ClientCli) {
+    let tcp_stream = TcpStream::connect(format!("{}:{}", config.host, config.port)).expect("Failed to connect to server.");
+    
     let mut ssl_connector =
         SslConnector::builder(SslMethod::tls()).expect("Failed to create SSLConnector");
     ssl_connector.set_verify(SslVerifyMode::NONE);
