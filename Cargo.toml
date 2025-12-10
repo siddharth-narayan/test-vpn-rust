@@ -12,10 +12,10 @@ name = "server"
 path = "src/server.rs"
 
 [dependencies]
-# example = "1.0.0"
-tun = "0.7"
+clap = { version = "4.5.53", features = ["derive"] }
+libc = "0.2.178"
+openssl = "0.10.75"
+pnet = "0.35.0"
 tokio = { version = "1", features = ["full"] }
 tokio-openssl = "0.6"
-openssl = { version = "0.10" }
-clap = { version = "4.5.53", features = ["derive"] }
-pnet = "0.35.0"
+tun = { version="0.7", features = ["async"] }

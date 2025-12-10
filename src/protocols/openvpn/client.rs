@@ -1,61 +1,84 @@
-use openssl::ssl::{SslConnector, SslMethod, SslStream, SslVerifyMode};
-use std::{
-    io::{Read, Write},
-    net::TcpStream, process::exit,
-};
+use openssl::ssl::{Ssl, SslContext};
+use std::net::SocketAddr;
+use tokio::io::split;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio_openssl::SslStream;
+use tun::AsyncDevice;
 
-use crate::protocols::openvpn::config::ClientCli;
+use crate::network::openssl::create_ctx;
+use crate::{network::device, protocols::openvpn::config::ClientCli};
 
-pub fn client_begin(stream: &mut SslStream<TcpStream>) {
-    // let mut buffer: [u8; 1024] = [0; 1024];
-    // stream.read(&mut buffer);
+pub async fn start_client(config: ClientCli) {
+    let ctx = create_ctx().unwrap();
+    if let Ok((ssl_read, ssl_write)) = client_connect(&ctx, "localhost:7000".parse().unwrap()).await
+    {
+        let device = device::get_default_tun();
+        let (tun_read, tun_write) = split(device);
 
-    // String::from_utf8(buffer.to_vec()).unwrap_or("72.100.100.100".to_string())
+        tokio::spawn(client_send_stream(tun_read, ssl_write));
+        tokio::spawn(client_recv_stream(ssl_read, tun_write));
+    } else {
+        println!("Failed to start connection to server");
+    }
 }
 
-pub fn start_client(config: ClientCli) {
-    let tcp_stream = TcpStream::connect(format!("{}:{}", config.host, config.port)).expect("Failed to connect to server.");
-    
-    let mut ssl_connector =
-        SslConnector::builder(SslMethod::tls()).expect("Failed to create SSLConnector");
-    ssl_connector.set_verify(SslVerifyMode::NONE);
-    let ssl_connector = ssl_connector.build();
+pub async fn client_connect(
+    ctx: &SslContext,
+    addr: SocketAddr,
+) -> Result<
+    (
+        tokio::io::ReadHalf<SslStream<TcpStream>>,
+        tokio::io::WriteHalf<SslStream<TcpStream>>,
+    ),
+    std::io::Error,
+> {
+    let ssl = Ssl::new(ctx)?;
 
-    let mut ssl_stream = ssl_connector
-        .connect("127.0.0.1", tcp_stream)
-        .expect("Failed to establish a TLS connection with the server");
+    let tcp_stream = TcpStream::connect(addr).await?;
 
+    // ssl.connect(tcp_stream)?;
+    let ssl_stream = SslStream::new(ssl, tcp_stream)?;
 
-    let mut tun_config = tun::Configuration::default();
-        tun_config.address("72.100.100.100");
-        // tun_config.layer(tun::Layer::L2);
-        tun_config.up();
+    return Ok(split(ssl_stream));
+}
 
-    let mut device;
-    match tun::create(&tun_config) {
-        Ok(d) => device = d,
-        Err(e) => {eprintln!("Failed to create device: {e}"); exit(-1)}
-    }
-
-
+pub async fn client_send_stream(
+    mut tun_read: tokio::io::ReadHalf<AsyncDevice>,
+    mut ssl_write: tokio::io::WriteHalf<SslStream<TcpStream>>,
+) {
     loop {
         let mut buffer: [u8; 1024] = [0; 1024];
-        let len = device.read(&mut buffer);
-        if len.is_err() {
-            break;
-        }
+        let result = tun_read.read(&mut buffer).await;
 
-        if buffer[0] >> 4 != 4 {
+        if result.is_err() {
             continue;
         }
 
-        _ = ssl_stream.write(&buffer);
-    }
-
-    match ssl_stream.shutdown() {
-        Ok(..) => {
-            _ = ssl_stream.shutdown();
+        if buffer[0] >> 4 != 4 {
+            continue; // Not IPv4
         }
-        Err(e) => eprintln!("Failed to shutdown TLS connection {}", e),
+
+        _ = ssl_write.write(&buffer);
+    }
+}
+
+pub async fn client_recv_stream(
+    mut ssl_read: tokio::io::ReadHalf<SslStream<TcpStream>>,
+    mut tun_write: tokio::io::WriteHalf<AsyncDevice>,
+) {
+    loop {
+        let mut buffer: [u8; 1024] = [0; 1024];
+        let result = ssl_read.read(&mut buffer).await;
+
+        if result.is_err() {
+            continue;
+        }
+
+        if buffer[0] >> 4 != 4 {
+            continue; // Not IPv4
+        }
+
+        _ = tun_write.write(&buffer);
     }
 }

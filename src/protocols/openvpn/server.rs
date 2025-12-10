@@ -1,22 +1,28 @@
-use std::{
-    collections::HashMap,
-    hash::BuildHasherDefault,
-    io::Read,
-    iter::Map,
-    net::{Ipv4Addr, TcpListener, TcpStream},
-    sync::{Arc, Mutex},
-};
+use std::net::{Ipv4Addr, SocketAddr};
 
-use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod, SslStream};
-use pnet::{
-    datalink::{self, interfaces},
-    packet::{
-        Packet,
-        ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
-        ipv4::{Ipv4, Ipv4Packet, MutableIpv4Packet},
-    },
-    transport::{self, TransportChannelType},
-};
+use openssl::ssl::{Ssl, SslContext};
+use tokio::{io::split, net::TcpStream};
+use tokio_openssl::SslStream;
+
+pub async fn client_connect(
+    ctx: &SslContext,
+    addr: SocketAddr,
+) -> Result<
+    (
+        tokio::io::ReadHalf<SslStream<TcpStream>>,
+        tokio::io::WriteHalf<SslStream<TcpStream>>,
+    ),
+    std::io::Error,
+> {
+    let ssl = Ssl::new(ctx)?;
+
+    let tcp_stream = TcpStream::connect(addr).await?;
+
+    // ssl.connect(tcp_stream)?;
+    let ssl_stream = SslStream::new(ssl, tcp_stream)?;
+
+    return Ok(split(ssl_stream));
+}
 
 struct ServerState {
     nat_table: Mutex<HashMap<NatEntry, Ipv4Addr>>,
@@ -26,7 +32,7 @@ struct ServerState {
 impl ServerState {
     fn new() -> ServerState {
         ServerState {
-            nat_table: Mutex::new(HashMap::<NatEntry, Ipv4Addr>::new()),
+            
             client_connection_map: Mutex::new(
                 HashMap::<Ipv4Addr, Arc<Mutex<SslStream<TcpStream>>>>::new(),
             ),
@@ -131,6 +137,8 @@ async fn reciever(server_state: Arc<ServerState>) {
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    let nat_table = DashMap::<Ipv4Addr, Async>::new();
+    
     let mut acceptor = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
     acceptor
         .set_private_key_file("key.pem", SslFiletype::PEM)
