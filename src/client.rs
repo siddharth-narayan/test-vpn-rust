@@ -1,10 +1,14 @@
-use clap::Parser;
+use std::future;
+
+use crate::protocols::openvpn::client;
 
 mod protocols;
-mod  network;
+mod network;
 
-fn main() {
-    let args = protocols::openvpn::config::ClientCli::parse();
-
+#[tokio::main]
+async fn main() {
+    tokio::spawn(client::main());
     
+    // Parse stuff commandline stuff here later
+    future::pending::<()>().await;
 }

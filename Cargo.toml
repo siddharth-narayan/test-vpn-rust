@@ -13,6 +13,7 @@ path = "src/server.rs"
 
 [dependencies]
 clap = { version = "4.5.53", features = ["derive"] }
+dashmap = "6.1.0"
 libc = "0.2.178"
 openssl = "0.10.75"
 pnet = "0.35.0"

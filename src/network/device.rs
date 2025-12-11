@@ -15,6 +15,6 @@ pub fn get_default_tun() -> AsyncDevice {
     }
 
     let device = device.unwrap();
-    device.set_nonblock();
+    // device.set_nonblock();
     AsyncDevice::new(device).unwrap()
 }

@@ -1,165 +1,117 @@
-use std::net::{Ipv4Addr, SocketAddr};
+use crate::network::{device::get_default_tun, openssl::create_server_ctx};
+use std::{
+    collections::linked_list,
+    future,
+    io::Error,
+    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
+    pin::Pin,
+};
 
+use dashmap::DashMap;
 use openssl::ssl::{Ssl, SslContext};
-use tokio::{io::split, net::TcpStream};
+use std::sync::Arc;
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf, split},
+    net::{TcpListener, TcpStream},
+    sync::Mutex,
+};
 use tokio_openssl::SslStream;
+use tun::AsyncDevice;
 
-pub async fn client_connect(
-    ctx: &SslContext,
-    addr: SocketAddr,
-) -> Result<
-    (
-        tokio::io::ReadHalf<SslStream<TcpStream>>,
-        tokio::io::WriteHalf<SslStream<TcpStream>>,
-    ),
-    std::io::Error,
-> {
-    let ssl = Ssl::new(ctx)?;
+type ClientTable = Arc<DashMap<SocketAddr, WriteHalf<SslStream<TcpStream>>>>;
+type SslRead = ReadHalf<SslStream<TcpStream>>;
+type SslWrite = WriteHalf<SslStream<TcpStream>>;
+type TunReadDevice = ReadHalf<AsyncDevice>;
+type TunWriteDevice = Arc<Mutex<WriteHalf<AsyncDevice>>>; // Wrap with Arc<Mutex<>> so that multiple server recv threads can write to it
 
-    let tcp_stream = TcpStream::connect(addr).await?;
+// Only one send stream (one thread to read TUN packets)
+async fn server_send_stream(mut tun_read: TunReadDevice, table: ClientTable) {
+    loop {
+        let mut buffer: [u8; 1024] = [0; 1024];
+        let result = tun_read.read(&mut buffer).await;
 
-    // ssl.connect(tcp_stream)?;
-    let ssl_stream = SslStream::new(ssl, tcp_stream)?;
-
-    return Ok(split(ssl_stream));
-}
-
-struct ServerState {
-    nat_table: Mutex<HashMap<NatEntry, Ipv4Addr>>,
-    client_connection_map: Mutex<HashMap<Ipv4Addr, Arc<Mutex<SslStream<TcpStream>>>>>,
-}
-
-impl ServerState {
-    fn new() -> ServerState {
-        ServerState {
-            
-            client_connection_map: Mutex::new(
-                HashMap::<Ipv4Addr, Arc<Mutex<SslStream<TcpStream>>>>::new(),
-            ),
-        }
-    }
-
-    fn add_nat_entry(&self, packet: &Ipv4Packet) {
-        let mut nat_table = self.nat_table.lock().unwrap();
-        let mut new_entry = NatEntry {
-            src: packet.get_source(),
-            dst: packet.get_destination(),
-            proto: packet.get_next_level_protocol(),
-            port: None,
+        let len = match result {
+            Ok(n) => n,
+            Err(_) => continue,
         };
 
-        match new_entry.proto {
-            IpNextHeaderProtocols::Tcp => {
-                new_entry.port = Some(
-                    pnet::packet::tcp::TcpPacket::new(packet.packet())
-                        .unwrap()
-                        .get_source(),
-                )
-            }
-            IpNextHeaderProtocols::Udp => {
-                new_entry.port = Some(
-                    pnet::packet::udp::UdpPacket::new(packet.packet())
-                        .unwrap()
-                        .get_source(),
-                )
-            }
-            _ => {}
-        }
+        println!("Sending {:?}", &buffer[..len]);
 
-        nat_table.insert(new_entry, packet.get_source());
-    }
-}
+        let client_addr = SocketAddrV4::from("127.0.0.1:3000".parse().unwrap());
 
-#[derive(Eq, Hash, PartialEq, Debug)]
-struct NatEntry {
-    src: Ipv4Addr,
-    dst: Ipv4Addr,
-    proto: IpNextHeaderProtocol,
-    port: Option<u16>,
-}
-
-fn packet_send(server_state: Arc<ServerState>, buf: &mut [u8], len: usize) {
-    if buf[0] >> 4 != 4 {
-        return;
-    }
-
-    let mut packet = MutableIpv4Packet::new(buf).unwrap();
-    server_state.add_nat_entry(&packet.to_immutable());
-    println!("Sending IPv4 Packet: {:?}", packet);
-
-    packet.set_source("192.168.1.197".parse().unwrap());
-    unsafe { forward_packet_ipv4(buf.as_mut_ptr(), len as u32) };
-}
-
-async fn handle_client(
-    mut stream: SslStream<TcpStream>,
-    server_state: Arc<ServerState>
-) {
-    let mut buffer = [0; 1024];
-
-    // let interfaces = interfaces();
-    // println!("{:?}", interfaces);
-    // let default_interface = interfaces
-    //     .iter()
-    //     .find(|e| e.is_up() && !e.is_loopback() && !e.ips.is_empty());
-
-    println!("Handling client");
-    loop {
-        match stream.read(&mut buffer) {
-            Ok(0) => {
-                _ = stream.shutdown();
-            }
-            Ok(len) => packet_send(server_state.clone(), &mut buffer, len),
-            Err(e) => eprintln!("Failed to read from connection: {}", e),
+        // Proceess packet here, get IP and port from higher level TCP/UDP
+        if let Some(mut ssl_write) = table.get_mut(&SocketAddr::from(client_addr)) {
+            _ = ssl_write.write(&buffer);
         }
     }
 }
 
-async fn reciever(server_state: Arc<ServerState>) {
-    let mut socket: i32 = -1;
-    tokio::task::block_in_place(|| unsafe { socket = ip_socket() });
-    println!("after c");
+// One recv stream for each client
+async fn server_recv_stream(mut ssl_read: SslRead, tun_write: TunWriteDevice) {
+    loop {
+        let mut buffer: [u8; 1024] = [0; 1024];
+        println!("recvc");
+        let result = ssl_read.read(&mut buffer).await;
 
-    println!("Reciever attenpwting to recieve");
+        let len = match result {
+            Ok(n) => n,
+            Err(e) => {
+                eprintln!("{}", e);
+                continue;
+            }
+        };
+
+        println!("Received {:?}", &buffer[..len]);
+
+        // let mut tun_write = tun_write.lock().await;
+
+        // Don't enable writing yet
+        // _ = tun_write.write(&buffer);
+    }
+}
+
+// Accepts incoming client connections
+async fn acceptor(
+    ctx: SslContext,
+    table: ClientTable,
+    tun_write: TunWriteDevice, // For adding to recv stream for each client
+) -> Result<(SslRead, SslWrite), Error> {
+    let listener = TcpListener::bind("0.0.0.0:443").await.unwrap();
 
     loop {
-        let mut buf: [u8; 4096] = [0; 4096];
-        let bytes: i32;
-
-        (unsafe { bytes = socket_read(socket, buf.as_mut_ptr(), 4096) });
-
-        if bytes == -1 {
+        let ssl = Ssl::new(&ctx)?;
+        let (stream, client_addr) = listener.accept().await.unwrap();
+        println!("accepted");
+        let mut ssl_stream = SslStream::new(ssl, stream)?;
+        println!("before handshake");
+        let handshake_result = Pin::new(&mut ssl_stream).accept().await;
+        println!("aafter handshake");
+        if handshake_result.is_err() {
+            eprintln!("{}", handshake_result.unwrap_err());
+            let _ = ssl_stream.shutdown().await;
             continue;
         }
-        println!("Recieved {bytes} bytes from somewhere!!: {:?}", buf);
+
+        println!("abcd");
+        let (ssl_read, ssl_write) = split(ssl_stream);
+
+        table.insert(client_addr, ssl_write);
+        tokio::spawn(server_recv_stream(ssl_read, tun_write.clone()));
     }
 }
 
-#[tokio::main]
-async fn main() -> std::io::Result<()> {
-    let nat_table = DashMap::<Ipv4Addr, Async>::new();
-    
-    let mut acceptor = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
-    acceptor
-        .set_private_key_file("key.pem", SslFiletype::PEM)
-        .unwrap();
-    acceptor.set_certificate_chain_file("cert.pem").unwrap();
-    acceptor.check_private_key().unwrap();
+pub async fn main() {
+    let client_table = DashMap::<SocketAddr, WriteHalf<SslStream<TcpStream>>>::new();
+    let client_table: ClientTable = Arc::new(client_table);
 
-    let acceptor = acceptor.build();
+    let tun = get_default_tun();
 
-    let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
-    println!("Listening on 127.0.0.1:8080");
-    let server_state = Arc::new(ServerState::new());
-    tokio::spawn(reciever(server_state.clone()));
-    loop {
-        let stream = listener.accept();
-        match stream {
-            Ok(stream) => {
-                let ssl_stream = acceptor.accept(stream.0).unwrap();
-                tokio::spawn(handle_client(ssl_stream, server_state.clone()));
-            }
-            Err(e) => eprintln!("Connection failed: {}", e),
-        }
-    }
+    let (tun_read, tun_write) = split(tun);
+    let tun_write: TunWriteDevice = Arc::from(Mutex::from(tun_write));
+
+    let ctx = create_server_ctx();
+    let ctx = ctx.unwrap();
+
+    tokio::spawn(acceptor(ctx, client_table.clone(), tun_write));
+    tokio::spawn(server_send_stream(tun_read, client_table.clone()));
 }
