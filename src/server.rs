@@ -1,26 +1,30 @@
-// use std::{future, pin::Pin};
+use std::{future, pin::Pin};
 
-// use openssl::ssl::{Ssl, SslAcceptor, SslMethod};
-// use tokio::{io::{AsyncWriteExt, split}};
-// use tokio_openssl::SslStream;
+use openssl::ssl::{Ssl, SslAcceptor, SslMethod};
+use tokio::{io::{AsyncWriteExt, split}};
+use tokio_openssl::SslStream;
 
-// use crate::protocols::openvpn::server;
+use crate::protocols::openvpn::server;
 
-// mod network;
-// mod protocols;
+mod network;
+mod protocols;
 
 // #[tokio::main]
-fn main() {
-    let sync_listener = std::net::TcpListener::bind("0.0.0.0:8080").unwrap();
+// fn main() {
+//     let sync_listener = std::net::TcpListener::bind("0.0.0.0:8080").unwrap();
     
-    let (sync_stream, _) = sync_listener.accept().unwrap();
+//     let (sync_stream, _) = sync_listener.accept().unwrap();
 
-    let sync_acceptor = openssl::ssl::SslAcceptor::mozilla_intermediate(openssl::ssl::SslMethod::tls_server()).unwrap().build();
-    let handshake_result = sync_acceptor.accept(sync_stream);
-    if handshake_result.is_err() {
-        eprintln!("{}", handshake_result.unwrap_err());
-    }
-}
+//     let sync_acceptor = openssl::ssl::SslAcceptor::mozilla_intermediate(openssl::ssl::SslMethod::tls_server()).unwrap().build();
+//     let handshake_result = sync_acceptor.accept(sync_stream);
+//     if handshake_result.is_err() {
+//         eprintln!("{}", handshake_result.unwrap_err());
+//     }
+
+//     let stream = handshake_result.unwrap();
+
+//     stream.ssl_write(&[10, 19]);
+// }
 
     // println!("Finished first handshake");
 
@@ -44,10 +48,10 @@ fn main() {
     // println!("abcd");
     // let (ssl_read, ssl_write) = split(ssl_stream);
 
-// #[tokio::main]
-// async fn main() {
-//     tokio::spawn(server::main());
+#[tokio::main]
+async fn main() {
+    server::main().await;
 
-//     // Parse stuff commandline stuff here later
-//     future::pending::<()>().await;
-// }
+    // Parse stuff commandline stuff here later
+    future::pending::<()>().await;
+}

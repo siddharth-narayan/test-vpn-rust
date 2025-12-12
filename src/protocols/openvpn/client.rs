@@ -1,4 +1,5 @@
 use openssl::ssl::{Ssl, SslContext};
+use pnet::packet::ipv4::MutableIpv4Packet;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::process::exit;
@@ -15,10 +16,8 @@ pub async fn main() {
     println!("afafa");
     let ctx = create_client_ctx().unwrap();
     if let Ok((mut ssl_read, mut ssl_write)) =
-        client_connect(&ctx, "127.0.0.1:443".parse().unwrap()).await
+        client_connect(&ctx, "127.0.0.1:8080".parse().unwrap()).await
     {
-        ssl_write.write_i32(72).await;
-        println!("afaf");
         let device = device::get_default_tun();
         let (tun_read, tun_write) = split(device);
 
@@ -47,7 +46,7 @@ pub async fn client_connect(
     let mut ssl_stream = SslStream::new(ssl, tcp_stream)?;
     
     let handshake_result = Pin::new(&mut ssl_stream).connect().await;
-    println!("aafter handshake");
+
     if handshake_result.is_err() {
         eprintln!("{}", handshake_result.unwrap_err());
         let _ = ssl_stream.shutdown().await;
@@ -62,15 +61,16 @@ pub async fn client_send_stream(
     mut ssl_write: WriteHalf<SslStream<TcpStream>>,
 ) {
     loop {
-        let mut buffer: [u8; 1024] = [0; 1024];
-        let result = tun_read.read(&mut buffer).await;
+        let mut buffer: Vec<u8> = Vec::new();
+        let result = tun_read.read_buf(&mut buffer).await;
 
         let len = match result {
+            Ok(0) => {println!("Send 0"); return;},
             Ok(n) => n,
-            Err(_) => continue,
+            Err(_) =>  {println!("Send Err"); return;},
         };
 
-        println!("Sending {:?}", &buffer[..len]);
+        println!("Sent {:?}", &buffer[..len]);
 
         _ = ssl_write.write(&buffer).await;
     }
@@ -81,15 +81,19 @@ pub async fn client_recv_stream(
     mut tun_write: WriteHalf<AsyncDevice>,
 ) {
     loop {
-        let mut buffer: [u8; 1024] = [0; 1024];
-        let result = ssl_read.read(&mut buffer).await;
+        let mut buffer: Vec<u8> = Vec::new();
+        let result = ssl_read.read_buf(&mut buffer).await;
 
         let len = match result {
+            Ok(0) => {println!("Recv 0"); return;},
             Ok(n) => n,
-            Err(_) => continue,
+            Err(_) =>  {println!("Recv Err"); return;},
         };
 
-        println!("Received {:?}", &buffer[..len]);
+        println!("Received {:?}", &buffer.as_slice()[0..len]);
+        
+
+        // println!("Received {:?}", &buffer[..len]);
         // _ = tun_write.write(&buffer);
     }
 }
