@@ -16,6 +16,8 @@ pub fn process_packet(mut buffer: Vec<u8>) {
 use std::ffi::CString;
 
 #[allow(non_camel_case_types)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+
 pub enum MessageType {
     P_CONTROL_HARD_RESET_CLIENT_V1 = 1,
     P_CONTROL_HARD_RESET_SERVER_V1,
@@ -41,6 +43,7 @@ struct OpenVPNPacket {
 }
 
 enum GenericPacket {
+    CiphertextControlPacket(CiphertextControlPacket),
     PlaintextControlPacket(PlaintextControlPacket),
     DataPacket(DataPacket),
 }
