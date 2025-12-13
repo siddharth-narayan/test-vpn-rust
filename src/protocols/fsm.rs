@@ -1,42 +1,41 @@
 // Manages a Finite State Machine builder so that protcols can be easily defined
+// It should only transition on input received from clients
 
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::sync::Arc;
+
+use tokio::sync::Mutex;
+
+use crate::network::openssl::SslWrite;
 
 // Where Action takes place functionally _during_ the transition, and if it fails, the transition doesn't occur
-pub type TransitionTable<State, Input, Action> = HashMap<(State, Input), (State, Action)>;
+pub type TransitionTable<State, Input, Data> = HashMap<(State, Input), (State, Box<dyn Fn(Arc<Mutex<SslWrite>>, Data) -> bool + 'static + Send + Sync>)>;
 
-pub trait FSMAction<State, Input> {
-    fn execute<AssociatedData>(&self, state: State, input: Input, data: AssociatedData) -> bool;
-}
-
-pub struct FSM<State, Input, Action>
-where
-    State: Eq + Hash + Copy,
-    Input: Eq + Hash + Copy,
-    Action: FSMAction<State, Input>,
+pub struct FSM<State, Input, AssociatedData>
 {
+    client_write: Arc<Mutex<SslWrite>>, // Weird, but for quick writes to the client
     current: State,
-    transitions: TransitionTable<State, Input, Action>,
+    transitions: TransitionTable<State, Input, AssociatedData>,
 }
 
-impl<State, Input, Action> FSM<State, Input, Action>
+impl<State, Input, AssociatedData> FSM<State, Input, AssociatedData>
 where
     State: Eq + Hash + Copy,
     Input: Eq + Hash + Copy,
-    Action: FSMAction<State, Input>
 {
-    pub fn new(initial: State, transitions: TransitionTable<State, Input, Action>) -> Self {
+    pub fn new(initial: State, transitions: TransitionTable<State, Input, AssociatedData>, ssl_write: Arc<Mutex<SslWrite>>) -> Self {
         Self {
+            client_write: ssl_write,
             current: initial,
             transitions,
         }
     }
 
-    pub fn transition<AssociatedData>(&mut self, input: Input, data: AssociatedData) -> Option<State> {
+    pub fn transition(mut self, input: Input, data: AssociatedData) -> Option<State> {
         let (next_state, action) = self.transitions.get(&(self.current, input))?;
 
-        let success = action.execute(self.current, input,  data);
+        let success = action(self.client_write, data);
 
         if success {
             self.current = *next_state;

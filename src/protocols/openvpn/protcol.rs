@@ -1,56 +1,90 @@
-use pnet::packet::ipv4::Ipv4Packet;
+use std::sync::Arc;
 
-use crate::protocols::{fsm::{FSM, FSMAction, TransitionTable}, openvpn::packet::MessageType};
+use pnet::packet::ipv4::Ipv4Packet;
+use tokio::{net::TcpStream, sync::Mutex};
+use tokio_openssl::SslStream;
+
+use crate::{network::openssl::SslWrite, protocols::{
+    fsm::{FSM, TransitionTable},
+    openvpn::packet::{MessageType, OpenVPNPacket},
+}};
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
-enum OpenVPNState {
+pub enum OpenVPNState {
     Unconnected,
     InHandshake,
     Connected,
     Errored,
-
 }
 
-enum OpenVPNAction {
-    
-}
+pub fn build_server_fsm(mut ssl_write: Arc<Mutex<SslWrite>>) -> FSM<OpenVPNState, MessageType, OpenVPNPacket> {
+    let mut transitions = TransitionTable::<OpenVPNState, MessageType, OpenVPNPacket>::new();
 
-
-
-impl FSMAction<OpenVPNState, MessageType> for OpenVPNAction {
-    fn execute<Ipv4Packet>(&self, state: OpenVPNState, input: MessageType, data: Ipv4Packet) -> bool {
-
-        // Only thing that needs to be verified here is that the packet is valid, and any side effects
-        // the transition table takes care of everything else
-        match state {
-            OpenVPNState::Unconnected => {
-                return true;
-            }
-
-            OpenVPNState::InHandshake => {
-
-            }
-
-            OpenVPNState::Connected => {
-
-            }
-
-            OpenVPNState::Errored => {
-
-            }
-        }
-        true
-    }
-}
-
-
-pub fn build_server_fsm() -> FSM<OpenVPNState, MessageType, OpenVPNAction> {
-    let mut transitions = TransitionTable::<OpenVPNState, MessageType, OpenVPNAction>::new();
     transitions.insert(
-        (OpenVPNState::Unconnected, MessageType::P_CONTROL_HARD_RESET_CLIENT_V2),
-        
+        (
+            OpenVPNState::Unconnected,
+            MessageType::P_CONTROL_HARD_RESET_CLIENT_V2,
+        ),
+        (
+            OpenVPNState::InHandshake,
+            Box::new(|ssl_write, data| {
+                
+                return true;
+            }),
+        ),
     );
 
-    FSM::new(OpenVPNState::Unconnected, transitions)
+    transitions.insert(
+        (
+            OpenVPNState::InHandshake,
+            MessageType::P_CONTROL_HARD_RESET_CLIENT_V2,
+        ),
+        (
+            OpenVPNState::InHandshake,
+            Box::new(|ssl_write, data| {
+                return true;
+            }),
+        ),
+    );
 
+    transitions.insert(
+        (
+            OpenVPNState::Unconnected,
+            MessageType::P_CONTROL_HARD_RESET_CLIENT_V2,
+        ),
+        (
+            OpenVPNState::InHandshake,
+            Box::new(|ssl_write, data| {
+                return true;
+            }),
+        ),
+    );
+
+    transitions.insert(
+        (
+            OpenVPNState::Unconnected,
+            MessageType::P_CONTROL_HARD_RESET_CLIENT_V2,
+        ),
+        (
+            OpenVPNState::InHandshake,
+            Box::new(|ssl_write, data| {
+                return true;
+            }),
+        ),
+    );
+
+    transitions.insert(
+        (
+            OpenVPNState::Unconnected,
+            MessageType::P_CONTROL_HARD_RESET_CLIENT_V2,
+        ),
+        (
+            OpenVPNState::InHandshake,
+            Box::new(|ssl_write, data| {
+                return true;
+            }),
+        ),
+    );
+
+    FSM::new(OpenVPNState::Unconnected, transitions, ssl_write)
 }

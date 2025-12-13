@@ -1,16 +1,16 @@
-use std::net::SocketAddr;
-
-use openssl::dh::Dh;
 use openssl::ssl::Error;
-use openssl::ssl::SslAcceptor;
 use openssl::ssl::SslConnector;
 use openssl::ssl::SslContext;
 use openssl::ssl::SslFiletype;
 use openssl::ssl::SslMethod;
-use openssl::ssl::SslOptions;
 use openssl::ssl::SslVerifyMode;
-use openssl::ssl::SslVersion;
+use tokio::io::ReadHalf;
+use tokio::io::WriteHalf;
+use tokio::net::TcpStream;
+use tokio_openssl::SslStream;
 
+pub type SslRead = ReadHalf<SslStream<TcpStream>>;
+pub type SslWrite = WriteHalf<SslStream<TcpStream>>;
 
 pub fn create_server_ctx() -> Result<SslContext, Error> {
     let mut builder = SslConnector::builder(SslMethod::tls_server())?;

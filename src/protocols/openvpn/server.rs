@@ -1,4 +1,4 @@
-use crate::{network::{device::get_default_tun, openssl::create_server_ctx}, protocols::openvpn::packet::process_packet};
+use crate::{network::{device::get_default_tun, openssl::{SslRead, SslWrite, create_server_ctx}}, protocols::{fsm::FSM, openvpn::{packet::{MessageType, OpenVPNPacket, process_packet}, protcol::{self, OpenVPNState}}}};
 use std::{
     collections::linked_list,
     future,
@@ -18,14 +18,17 @@ use tokio::{
 use tokio_openssl::SslStream;
 use tun::AsyncDevice;
 
-type ClientTable = Arc<DashMap<SocketAddr, WriteHalf<SslStream<TcpStream>>>>;
-type SslRead = ReadHalf<SslStream<TcpStream>>;
-type SslWrite = WriteHalf<SslStream<TcpStream>>;
+struct ClientConnectionState { 
+    ssl_write: Arc<Mutex<SslWrite>>, 
+    fsm: FSM<OpenVPNState, MessageType, OpenVPNPacket>,
+}
+
+type ClientTable = DashMap<SocketAddr, ClientConnectionState>;
 type TunReadDevice = ReadHalf<AsyncDevice>;
 type TunWriteDevice = Arc<Mutex<WriteHalf<AsyncDevice>>>; // Wrap with Arc<Mutex<>> so that multiple server recv threads can write to it
 
 // Only one send stream (one thread to read TUN packets)
-async fn server_send_stream(mut tun_read: TunReadDevice, table: ClientTable) {
+async fn server_send_stream(mut tun_read: TunReadDevice, table: Arc<ClientTable>) {
     loop {
         let mut buffer: Vec<u8> = Vec::new();
         let result = tun_read.read_buf(&mut buffer).await;
@@ -43,8 +46,8 @@ async fn server_send_stream(mut tun_read: TunReadDevice, table: ClientTable) {
         println!("Sent {:?}", &buffer[..len]);
 
         // Proceess packet here, get IP and port from higher level TCP/UDP
-        if let Some(mut ssl_write) = table.get_mut(&SocketAddr::from(client_addr)) {
-            _ = ssl_write.write(&buffer);
+        if let Some(client_state) = table.get_mut(&SocketAddr::from(client_addr)) {
+            _ = client_state.ssl_write.lock().await.write(&buffer);
         }
     }
 }
@@ -71,10 +74,10 @@ async fn server_recv_stream(mut ssl_read: SslRead, tun_write: TunWriteDevice) {
     }
 }
 
-// Accepts incoming client connections
+// Accepts incoming client connections, then spawns the necessary threads
 async fn acceptor(
     ctx: SslContext,
-    table: ClientTable,
+    state: Arc<ClientTable>,
     tun_write: TunWriteDevice, // For adding to recv stream for each client
 ) -> Result<(SslRead, SslWrite), Error> {
     let listener = TcpListener::bind("0.0.0.0:8080").await.unwrap();
@@ -93,14 +96,19 @@ async fn acceptor(
         println!("Accepted new client");
         let (ssl_read, ssl_write) = split(ssl_stream);
 
-        table.insert(client_addr, ssl_write);
+        let ssl_write = Arc::new(Mutex::new(ssl_write));
+        let fsm = protcol::build_server_fsm(ssl_write.clone());
+        let client_state = ClientConnectionState { ssl_write, fsm };
+        
+        state.insert(client_addr, client_state);
         tokio::spawn(server_recv_stream(ssl_read, tun_write.clone()));
     }
 }
 
 pub async fn main() {
-    let client_table = DashMap::<SocketAddr, WriteHalf<SslStream<TcpStream>>>::new();
-    let client_table: ClientTable = Arc::new(client_table);
+    let client_table = ClientTable::new();
+
+    let client_table: Arc<ClientTable> = Arc::new(client_table);
 
     let tun = get_default_tun();
 

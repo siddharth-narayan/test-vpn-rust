@@ -35,7 +35,7 @@ struct PacketAck {
 
 }
 
-struct OpenVPNPacket {
+pub struct OpenVPNPacket {
     packet_len: u16,
     message_type: MessageType,
     key_id: u8, // key_id < 8
@@ -44,7 +44,7 @@ struct OpenVPNPacket {
 
 enum GenericPacket {
     CiphertextControlPacket(CiphertextControlPacket),
-    PlaintextControlPacket(PlaintextControlPacket),
+    PlaintextControlPacket(PlaintextControlPacket), // Obsolete?
     DataPacket(DataPacket),
 }
 
