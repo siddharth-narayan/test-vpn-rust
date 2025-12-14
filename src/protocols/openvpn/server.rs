@@ -24,11 +24,11 @@ struct ClientConnectionState {
 }
 
 type ClientTable = DashMap<SocketAddr, ClientConnectionState>;
-type TunReadDevice = ReadHalf<AsyncDevice>;
-type TunWriteDevice = Arc<Mutex<WriteHalf<AsyncDevice>>>; // Wrap with Arc<Mutex<>> so that multiple server recv threads can write to it
+type TunRead = ReadHalf<AsyncDevice>;
+type TunWrite = Arc<Mutex<WriteHalf<AsyncDevice>>>; // Wrap with Arc<Mutex<>> so that multiple server recv threads can write to it
 
 // Only one send stream (one thread to read TUN packets)
-async fn server_send_stream(mut tun_read: TunReadDevice, table: Arc<ClientTable>) {
+async fn server_send_stream(mut tun_read: TunRead, table: Arc<ClientTable>) {
     loop {
         let mut buffer: Vec<u8> = Vec::new();
         let result = tun_read.read_buf(&mut buffer).await;
@@ -53,7 +53,7 @@ async fn server_send_stream(mut tun_read: TunReadDevice, table: Arc<ClientTable>
 }
 
 // One recv stream for each client
-async fn server_recv_stream(mut ssl_read: SslRead, tun_write: TunWriteDevice) {
+async fn server_recv_stream(mut ssl_read: SslRead, tun_write: TunWrite) {
     loop {
         let mut buffer: Vec<u8> = Vec::new();
 
@@ -78,7 +78,7 @@ async fn server_recv_stream(mut ssl_read: SslRead, tun_write: TunWriteDevice) {
 async fn acceptor(
     ctx: SslContext,
     state: Arc<ClientTable>,
-    tun_write: TunWriteDevice, // For adding to recv stream for each client
+    tun_write: TunWrite, // For adding to recv stream for each client
 ) -> Result<(SslRead, SslWrite), Error> {
     let listener = TcpListener::bind("0.0.0.0:8080").await.unwrap();
 
@@ -113,7 +113,7 @@ pub async fn main() {
     let tun = get_default_tun();
 
     let (tun_read, tun_write) = split(tun);
-    let tun_write: TunWriteDevice = Arc::from(Mutex::from(tun_write));
+    let tun_write: TunWrite = Arc::from(Mutex::from(tun_write));
 
     let ctx = create_server_ctx();
     let ctx = ctx.unwrap();
