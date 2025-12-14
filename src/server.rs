@@ -1,4 +1,4 @@
-use std::{future, pin::Pin};
+use std::future;
 
 use openssl::ssl::{Ssl, SslAcceptor, SslMethod};
 use tokio::{io::{AsyncWriteExt, split}};

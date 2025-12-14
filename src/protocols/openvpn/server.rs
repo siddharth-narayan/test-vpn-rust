@@ -1,4 +1,15 @@
-use crate::{network::{device::get_default_tun, openssl::{SslRead, SslWrite, create_server_ctx}}, protocols::{fsm::FSM, openvpn::{packet::{MessageType, OpenVPNPacket, process_packet}, protcol::{self, OpenVPNState}}}};
+use crate::{
+    network::{
+        device::get_default_tun, nat::process_incoming_packet, openssl::{SslRead, SslWrite, create_server_ctx}
+    },
+    protocols::{
+        fsm::FSM,
+        openvpn::{
+            packet::{MessageType, OpenVPNPacket},
+            protcol::{self, OpenVPNState},
+        },
+    },
+};
 use std::{
     collections::linked_list,
     future,
@@ -18,9 +29,8 @@ use tokio::{
 use tokio_openssl::SslStream;
 use tun::AsyncDevice;
 
-struct ClientConnectionState { 
-    ssl_write: Arc<Mutex<SslWrite>>, 
-    fsm: FSM<OpenVPNState, MessageType, OpenVPNPacket>,
+struct ClientConnectionState {
+    ssl_write: SslWrite,
 }
 
 type ClientTable = DashMap<SocketAddr, ClientConnectionState>;
@@ -34,20 +44,26 @@ async fn server_send_stream(mut tun_read: TunRead, table: Arc<ClientTable>) {
         let result = tun_read.read_buf(&mut buffer).await;
 
         let len = match result {
-            Ok(0) => {println!("Send 0"); return;},
+            Ok(0) => {
+                println!("Send 0");
+                return;
+            }
             Ok(n) => n,
-            Err(_) =>  {println!("Send Err"); return;},
+            Err(_) => {
+                println!("Send Err");
+                return;
+            }
         };
 
         let client_addr = SocketAddrV4::from("127.0.0.1:3000".parse().unwrap());
-        
-        process_packet(buffer.clone());
+
+        process_incoming_packet(buffer.clone());
 
         println!("Sent {:?}", &buffer[..len]);
 
         // Proceess packet here, get IP and port from higher level TCP/UDP
-        if let Some(client_state) = table.get_mut(&SocketAddr::from(client_addr)) {
-            _ = client_state.ssl_write.lock().await.write(&buffer);
+        if let Some(mut client_state) = table.get_mut(&SocketAddr::from(client_addr)) {
+            _ = client_state.ssl_write.write(&buffer);
         }
     }
 }
@@ -60,9 +76,15 @@ async fn server_recv_stream(mut ssl_read: SslRead, tun_write: TunWrite) {
         let result = ssl_read.read_buf(&mut buffer).await;
 
         let len = match result {
-            Ok(0) => {println!("Recv 0"); return;},
+            Ok(0) => {
+                println!("Recv 0");
+                return;
+            }
             Ok(n) => n,
-            Err(_) =>  {println!("Recv Err"); return;},
+            Err(_) => {
+                println!("Recv Err");
+                return;
+            }
         };
 
         println!("Received {:?}", &buffer[..len]);
@@ -95,11 +117,9 @@ async fn acceptor(
 
         println!("Accepted new client");
         let (ssl_read, ssl_write) = split(ssl_stream);
-
-        let ssl_write = Arc::new(Mutex::new(ssl_write));
-        let fsm = protcol::build_server_fsm(ssl_write.clone());
-        let client_state = ClientConnectionState { ssl_write, fsm };
         
+        let client_state = ClientConnectionState { ssl_write };
+
         state.insert(client_addr, client_state);
         tokio::spawn(server_recv_stream(ssl_read, tun_write.clone()));
     }

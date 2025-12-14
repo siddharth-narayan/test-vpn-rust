@@ -1,19 +1,13 @@
-use pnet::packet::ipv4::MutableIpv4Packet;
+use pnet::packet::{
+    ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
+    ipv4::{Ipv4Packet, MutableIpv4Packet},
+    tcp::{MutableTcpOptionPacket, TcpOptionPacket, TcpPacket},
+    udp::UdpPacket,
+};
 
-pub fn process_packet(mut buffer: Vec<u8>) {
-    let p = MutableIpv4Packet::new(&mut buffer);
+use std::{error::Error, ffi::CString, net::SocketAddrV4};
 
-    match p {
-        Some(p) => {
-            println!("hAHA:{:?}", p);
-        },
-        None => {
-            println!("Got none packet");
-        }
-    }
-}
-
-use std::ffi::CString;
+use crate::{network::nat::NatEntry, protocols::openvpn::protcol};
 
 #[allow(non_camel_case_types)]
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
@@ -31,9 +25,7 @@ pub enum MessageType {
     P_CONTROL_HARD_RESET_CLIENT_V3,
 }
 
-struct PacketAck {
-
-}
+struct PacketAck {}
 
 pub struct OpenVPNPacket {
     packet_len: u16,
@@ -68,7 +60,13 @@ struct PlaintextControlPacket {
 
 impl PlaintextControlPacket {
     fn new(method: u8) -> PlaintextControlPacket {
-        PlaintextControlPacket { key_method: 0, key_source: 0, options: None, username: None, password: None }
+        PlaintextControlPacket {
+            key_method: 0,
+            key_source: 0,
+            options: None,
+            username: None,
+            password: None,
+        }
     }
 
     fn to_bytes(self) -> Vec<u8> {
@@ -94,17 +92,10 @@ impl PlaintextControlPacket {
 
         return out;
     }
-
 }
 
-struct DataPacket {
+struct DataPacket {}
 
-}
+impl DataPacket {}
 
-impl DataPacket {
-
-}
-
-fn build_packet() {
-
-}
+fn build_packet() {}
