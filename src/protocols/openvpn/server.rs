@@ -1,4 +1,4 @@
-use crate::{network::{device::get_default_tun, openssl::{SslRead, SslWrite, create_server_ctx}}, protocols::{fsm::FSM, openvpn::{packet::{MessageType, OpenVPNPacket, process_packet}, protcol::{self, OpenVPNState}}}};
+use crate::{network::{device::get_default_tun, openssl::{SslRead, SslWrite, create_server_ctx}}, protocols::{fsm::FSM, openvpn::{packet::{MessageType, OpenVPNPacket, process_packet}, protcol::{self, OpenVPNState}}, util::{TunRead, TunWrite}}};
 use std::{
     collections::linked_list,
     future,
@@ -24,8 +24,6 @@ struct ClientConnectionState {
 }
 
 type ClientTable = DashMap<SocketAddr, ClientConnectionState>;
-type TunRead = ReadHalf<AsyncDevice>;
-type TunWrite = Arc<Mutex<WriteHalf<AsyncDevice>>>; // Wrap with Arc<Mutex<>> so that multiple server recv threads can write to it
 
 // Only one send stream (one thread to read TUN packets)
 async fn server_send_stream(mut tun_read: TunRead, table: Arc<ClientTable>) {

@@ -8,6 +8,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::network::openssl::SslWrite;
+use crate::protocols::util::TunWrite;
 
 // Where Action takes place functionally _during_ the transition, and if it fails, the transition doesn't occur
 pub type TransitionTable<State, Input, Data> = HashMap<(State, Input), (State, Box<dyn Fn(Arc<Mutex<SslWrite>>, Data) -> bool + 'static + Send + Sync>)>;
@@ -15,6 +16,7 @@ pub type TransitionTable<State, Input, Data> = HashMap<(State, Input), (State, B
 pub struct FSM<State, Input, AssociatedData>
 {
     client_write: Arc<Mutex<SslWrite>>, // Weird, but for quick writes to the client
+    tun_write: TunWrite,
     current: State,
     transitions: TransitionTable<State, Input, AssociatedData>,
 }
