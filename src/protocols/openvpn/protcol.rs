@@ -10,81 +10,15 @@ use crate::{network::openssl::SslWrite, protocols::{
 }};
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
-pub enum OpenVPNState {
+pub enum ProtocolState {
     Unconnected,
     InHandshake,
     Connected,
     Errored,
 }
 
-pub fn build_server_fsm(mut ssl_write: Arc<Mutex<SslWrite>>) -> FSM<OpenVPNState, MessageType, OpenVPNPacket> {
-    let mut transitions = TransitionTable::<OpenVPNState, MessageType, OpenVPNPacket>::new();
+pub fn build_openvpn_packet(ip_packet: Ipv4Packet) {
+    let mut total_size = 0;
 
-    transitions.insert(
-        (
-            OpenVPNState::Unconnected,
-            MessageType::P_CONTROL_HARD_RESET_CLIENT_V2,
-        ),
-        (
-            OpenVPNState::InHandshake,
-            Box::new(|ssl_write, data| {
-                
-                return true;
-            }),
-        ),
-    );
-
-    transitions.insert(
-        (
-            OpenVPNState::InHandshake,
-            MessageType::P_CONTROL_HARD_RESET_CLIENT_V2,
-        ),
-        (
-            OpenVPNState::InHandshake,
-            Box::new(|ssl_write, data| {
-                return true;
-            }),
-        ),
-    );
-
-    transitions.insert(
-        (
-            OpenVPNState::Unconnected,
-            MessageType::P_CONTROL_HARD_RESET_CLIENT_V2,
-        ),
-        (
-            OpenVPNState::InHandshake,
-            Box::new(|ssl_write, data| {
-                return true;
-            }),
-        ),
-    );
-
-    transitions.insert(
-        (
-            OpenVPNState::Unconnected,
-            MessageType::P_CONTROL_HARD_RESET_CLIENT_V2,
-        ),
-        (
-            OpenVPNState::InHandshake,
-            Box::new(|ssl_write, data| {
-                return true;
-            }),
-        ),
-    );
-
-    transitions.insert(
-        (
-            OpenVPNState::Unconnected,
-            MessageType::P_CONTROL_HARD_RESET_CLIENT_V2,
-        ),
-        (
-            OpenVPNState::InHandshake,
-            Box::new(|ssl_write, data| {
-                return true;
-            }),
-        ),
-    );
-
-    FSM::new(OpenVPNState::Unconnected, transitions, ssl_write)
+    total_size += ip_packet.get_total_length()
 }

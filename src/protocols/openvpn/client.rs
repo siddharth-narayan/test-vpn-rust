@@ -3,26 +3,46 @@ use pnet::packet::ipv4::MutableIpv4Packet;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::process::exit;
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::io::{ReadHalf, WriteHalf, split};
 use tokio::net::TcpStream;
+use tokio::sync::{Mutex, RwLock};
 use tokio_openssl::SslStream;
 use tun::AsyncDevice;
 
 use crate::network::device;
-use crate::network::openssl::{create_client_ctx, create_server_ctx};
+use crate::network::openssl::create_client_ctx;
+use crate::protocols::openvpn::protcol::ProtocolState;
+
+struct ClientState {
+    pub state: ProtocolState,
+    pub sent_bytes: u64,
+    pub recv_bytes: u64,
+}
+
+impl ClientState {
+    fn new() -> Self {
+        ClientState {
+            state: ProtocolState::Unconnected,
+            sent_bytes: 0,
+            recv_bytes: 0,
+        }
+    }
+}
 
 pub async fn main() {
-    println!("afafa");
     let ctx = create_client_ctx().unwrap();
-    if let Ok((mut ssl_read, mut ssl_write)) =
-        client_connect(&ctx, "127.0.0.1:8080".parse().unwrap()).await
+
+    let state = Arc::new(RwLock::new(ClientState::new()));
+
+    if let Ok((ssl_read, ssl_write)) = client_connect(&ctx, "127.0.0.1:8080".parse().unwrap()).await
     {
         let device = device::get_default_tun();
         let (tun_read, tun_write) = split(device);
 
-        tokio::spawn(client_send_stream(tun_read, ssl_write));
-        tokio::spawn(client_recv_stream(ssl_read, tun_write));
+        tokio::spawn(client_send_stream(state.clone(), tun_read, ssl_write));
+        tokio::spawn(client_recv_stream(state.clone(), ssl_read, tun_write));
     } else {
         println!("Failed to start connection to server");
     }
@@ -44,7 +64,7 @@ pub async fn client_connect(
 
     // ssl.connect(tcp_stream)?;
     let mut ssl_stream = SslStream::new(ssl, tcp_stream)?;
-    
+
     let handshake_result = Pin::new(&mut ssl_stream).connect().await;
 
     if handshake_result.is_err() {
@@ -57,6 +77,7 @@ pub async fn client_connect(
 }
 
 pub async fn client_send_stream(
+    mut state: Arc<RwLock<ClientState>>,
     mut tun_read: ReadHalf<AsyncDevice>,
     mut ssl_write: WriteHalf<SslStream<TcpStream>>,
 ) {
@@ -65,18 +86,35 @@ pub async fn client_send_stream(
         let result = tun_read.read_buf(&mut buffer).await;
 
         let len = match result {
-            Ok(0) => {println!("Send 0"); return;},
+            Ok(0) => {
+                println!("Send 0");
+                return;
+            }
             Ok(n) => n,
-            Err(_) =>  {println!("Send Err"); return;},
+            Err(_) => {
+                println!("Send Err");
+                return;
+            }
         };
+
+        match state.read().await.state {
+            ProtocolState::Unconnected => {},
+            ProtocolState::InHandshake => {}
+            ProtocolState::Connected => {
+                let vpn_packet = build_openvpn_packet();
+                _ = ssl_write.write(&buffer).await;
+            },
+            ProtocolState::Errored => {},
+        }
 
         println!("Sent {:?}", &buffer[..len]);
 
-        _ = ssl_write.write(&buffer).await;
+
     }
 }
 
 pub async fn client_recv_stream(
+    mut state: Arc<RwLock<ClientState>>,
     mut ssl_read: ReadHalf<SslStream<TcpStream>>,
     mut tun_write: WriteHalf<AsyncDevice>,
 ) {
@@ -85,13 +123,18 @@ pub async fn client_recv_stream(
         let result = ssl_read.read_buf(&mut buffer).await;
 
         let len = match result {
-            Ok(0) => {println!("Recv 0"); return;},
+            Ok(0) => {
+                println!("Recv 0");
+                return;
+            }
             Ok(n) => n,
-            Err(_) =>  {println!("Recv Err"); return;},
+            Err(_) => {
+                println!("Recv Err");
+                return;
+            }
         };
 
         println!("Received {:?}", &buffer.as_slice()[0..len]);
-        
 
         // println!("Received {:?}", &buffer[..len]);
         // _ = tun_write.write(&buffer);

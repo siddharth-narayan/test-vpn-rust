@@ -34,6 +34,12 @@ pub struct OpenVPNPacket {
     payload: GenericPacket,
 }
 
+impl OpenVPNPacket {
+    fn new() -> Self {
+        OpenVPNPacket { packet_len: (), message_type: (), key_id: (), payload: () }
+    }
+}
+
 enum GenericPacket {
     CiphertextControlPacket(CiphertextControlPacket),
     PlaintextControlPacket(PlaintextControlPacket), // Obsolete?
@@ -47,6 +53,12 @@ struct CiphertextControlPacket {
     packet_acks: Vec<PacketAck>, // include peer_session_id if len > 0
     packet_id: u32,
     payload: Vec<u8>,
+}
+
+impl CiphertextControlPacket {
+    pub fn new() -> Self {
+        CiphertextControlPacket { session_id: (), hmac: (), replay_packet_id: (), packet_acks: (), packet_id: (), payload: () }
+    }
 }
 
 struct PlaintextControlPacket {
@@ -94,8 +106,10 @@ impl PlaintextControlPacket {
     }
 }
 
-struct DataPacket {}
+struct DataPacket {
 
-impl DataPacket {}
+}
 
-fn build_packet() {}
+impl DataPacket {
+
+}
