@@ -1,5 +1,5 @@
 use openssl::ssl::{Ssl, SslContext};
-use pnet::packet::ipv4::MutableIpv4Packet;
+use pnet::packet::ipv4::{Ipv4Packet, MutableIpv4Packet};
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::process::exit;
@@ -13,28 +13,12 @@ use tun::AsyncDevice;
 
 use crate::network::device;
 use crate::network::openssl::create_client_ctx;
-use crate::protocols::openvpn::protcol::ProtocolState;
-
-struct ClientState {
-    pub state: ProtocolState,
-    pub sent_bytes: u64,
-    pub recv_bytes: u64,
-}
-
-impl ClientState {
-    fn new() -> Self {
-        ClientState {
-            state: ProtocolState::Unconnected,
-            sent_bytes: 0,
-            recv_bytes: 0,
-        }
-    }
-}
+use crate::protocols::openvpn::protcol::{ClientState, ProtocolState, build_openvpn_packet};
 
 pub async fn main() {
     let ctx = create_client_ctx().unwrap();
 
-    let state = Arc::new(RwLock::new(ClientState::new()));
+    let state = Arc::new(RwLock::new(ClientState::new(0)));
 
     if let Ok((ssl_read, ssl_write)) = client_connect(&ctx, "127.0.0.1:8080".parse().unwrap()).await
     {
@@ -97,15 +81,12 @@ pub async fn client_send_stream(
             }
         };
 
-        match state.read().await.state {
-            ProtocolState::Unconnected => {},
-            ProtocolState::InHandshake => {}
-            ProtocolState::Connected => {
-                let vpn_packet = build_openvpn_packet();
-                _ = ssl_write.write(&buffer).await;
-            },
-            ProtocolState::Errored => {},
+        let ip_packet = Ipv4Packet::new(buffer.as_slice());
+        if ip_packet.is_none() {
+            continue;
         }
+        let ip_packet = ip_packet.unwrap();
+
 
         println!("Sent {:?}", &buffer[..len]);
 

@@ -25,18 +25,26 @@ pub enum MessageType {
     P_CONTROL_HARD_RESET_CLIENT_V3,
 }
 
-struct PacketAck {}
+struct PacketAck {
+
+}
+
+impl PacketAck {
+    pub fn len(&self) -> usize {
+        return 0;
+    }
+}
 
 pub struct OpenVPNPacket {
     packet_len: u16,
     message_type: MessageType,
-    key_id: u8, // key_id < 8
+    key_id: u8, // key_id < 8 (3 bits)
     payload: GenericPacket,
 }
 
 impl OpenVPNPacket {
-    fn new() -> Self {
-        OpenVPNPacket { packet_len: (), message_type: (), key_id: (), payload: () }
+    fn new(p_type: MessageType) -> Self {
+        OpenVPNPacket { packet_len: 0, message_type: , key_id: (), payload: () }
     }
 }
 
@@ -44,6 +52,16 @@ enum GenericPacket {
     CiphertextControlPacket(CiphertextControlPacket),
     PlaintextControlPacket(PlaintextControlPacket), // Obsolete?
     DataPacket(DataPacket),
+}
+
+impl GenericPacket {
+    pub fn len(&self) {
+        match self {
+            GenericPacket::CiphertextControlPacket(ciphertext_control_packet) => ciphertext_control_packet.payload.len(),
+            GenericPacket::PlaintextControlPacket(plaintext_control_packet) => todo!(),
+            GenericPacket::DataPacket(data_packet) => todo!(),
+        }
+    }
 }
 
 struct CiphertextControlPacket {
@@ -56,8 +74,34 @@ struct CiphertextControlPacket {
 }
 
 impl CiphertextControlPacket {
-    pub fn new() -> Self {
-        CiphertextControlPacket { session_id: (), hmac: (), replay_packet_id: (), packet_acks: (), packet_id: (), payload: () }
+    pub fn new(session: u64, payload: Vec<u8>) -> Self {
+        CiphertextControlPacket { session_id: session, hmac: None, replay_packet_id: 0, packet_acks: Vec::new(), packet_id: 0, payload: payload }
+    }
+
+    pub fn len(&self) {
+        let mut len: usize = 24; // 3 x u64 = 24 bytes
+        
+        if self.hmac.is_some() {
+            len += self.hmac.clone().unwrap().len();
+        }
+
+        len += self.packet_acks.iter().map(|packet_ack| {
+            packet_ack.len()
+        }).sum::<usize>();
+
+        len += self.payload.len()
+    }
+
+    pub fn to_bytes(self) -> Vec<u8> {
+        let mut out: Vec<u8> = Vec::new();
+
+        out.extend(self.session_id.to_le_bytes());
+        
+        if self.hmac.is_some() {
+            out.append(&mut self.hmac.unwrap())
+        }
+
+        out
     }
 }
 
