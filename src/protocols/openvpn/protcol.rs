@@ -41,20 +41,22 @@ pub enum ProtocolState {
     Errored,
 }
 
-pub async fn build_openvpn_packet(state: RwLock<ClientState>, ip_packet: Ipv4Packet) {
-    let mut total_size = 0;
+pub async fn build_data_packet(ip_packet: Ipv4Packet) -> OpenVPNPacket {
+    // let mut total_size = 0;
 
-    let guard = state.read().await;
-    match guard.state {
-        ProtocolState::Unconnected => {}
-        ProtocolState::InHandshake => {}
-        ProtocolState::Connected => {
-            let vpn_packet = 
-            _ = ssl_write.write(&buffer).await;
-        }
-        ProtocolState::Errored => {}
-    }
-    total_size += ip_packet.get_total_length();
+    // let guard = state.read().await;
+    // match guard.state {
+    //     ProtocolState::Unconnected => {}
+    //     ProtocolState::InHandshake => {}
+    //     ProtocolState::Connected => {
+    //         let vpn_packet = 
+    //         _ = ssl_write.write(&buffer).await;
+    //     }
+    //     ProtocolState::Errored => {}
+    // }
+    // total_size += ip_packet.get_total_length();
+
+
 
     return;
 }

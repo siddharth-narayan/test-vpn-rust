@@ -8,7 +8,7 @@ use crate::{
         fsm::FSM,
         openvpn::{
             packet::{MessageType, OpenVPNPacket},
-            protcol::{self, OpenVPNState},
+            protcol::{self, ClientState, build_openvpn_packet},
         },
     },
 };
@@ -40,11 +40,7 @@ use tokio::{
 use tokio_openssl::SslStream;
 use tun::AsyncDevice;
 
-struct ClientConnectionState {
-    ssl_write: SslWrite,
-}
-
-type ClientTable = DashMap<SocketAddr, ClientConnectionState>;
+type ClientTable = DashMap<SocketAddr, (ClientState, SslWrite)>;
 type TunRead = ReadHalf<AsyncDevice>;
 type TunWrite = Arc<Mutex<WriteHalf<AsyncDevice>>>; // Wrap with Arc<Mutex<>> so that multiple server recv threads can write to it
 
@@ -70,13 +66,20 @@ async fn server_send_stream(
             }
         };
 
-        let packet = Ipv4Packet::new(&mut buffer)?;
+        let ip_packet = Ipv4Packet::new(&mut buffer)?;
 
-        if let Some(entry) = build_nat_entry(&packet) {
+        if let Some(entry) = build_nat_entry(&ip_packet) {
             if let Some(existing_address) = nat_table.get_mut(&entry) {
                 if let Some(mut client_state) = client_table.get_mut(existing_address)
                 {
-                    _ = client_state.ssl_write.write(&buffer);
+                    let (state, client_ssl_write) = client_state.value();
+                    match state.state {
+                        protcol::ProtocolState::Connected => {
+                            let openvpn_packet = build_data_packet(state, ip_packet);
+                            client_ssl_write.write(openvpn_packet.serialize());
+                        },
+                        _ => todo!(),
+                    }
                 }
             }
         }
@@ -103,6 +106,8 @@ async fn server_recv_stream(mut ssl_read: SslRead, tun_write: TunWrite) {
                 return;
             }
         };
+
+        let ip_packet = reconstruct_openvpn_packet(buffer);
 
         println!("Received {:?}", &buffer[..len]);
 

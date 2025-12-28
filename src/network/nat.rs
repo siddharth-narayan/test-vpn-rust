@@ -4,17 +4,14 @@ use std::{
 };
 
 use dashmap::DashMap;
-use pnet::
-    packet::{
-        ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
-        ipv4::Ipv4Packet,
-        tcp::TcpPacket,
-        udp::UdpPacket,
-    }
-;
+use pnet::packet::{
+    ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
+    ipv4::Ipv4Packet,
+    tcp::TcpPacket,
+    udp::UdpPacket,
+};
 
 pub fn build_nat_entry(mut packet: &Ipv4Packet) -> Option<NatEntry> {
-
     let dest_ip = p.get_source();
 
     let protocol = p.get_next_level_protocol();
