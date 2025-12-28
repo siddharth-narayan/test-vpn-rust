@@ -1,6 +1,8 @@
 use crate::{
     network::{
-        device::get_default_tun, nat::process_incoming_packet, openssl::{SslRead, SslWrite, create_server_ctx}
+        device::get_default_tun,
+        nat::{NatTable, build_nat_entry, process_incoming_packet},
+        openssl::{SslRead, SslWrite, create_server_ctx},
     },
     protocols::{
         fsm::FSM,
@@ -17,6 +19,15 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
     pin::Pin,
 };
+
+use pnet::
+    packet::{
+        ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
+        ipv4::Ipv4Packet,
+        tcp::TcpPacket,
+        udp::UdpPacket,
+    }
+;
 
 use dashmap::DashMap;
 use openssl::ssl::{Ssl, SslContext};
@@ -38,7 +49,11 @@ type TunRead = ReadHalf<AsyncDevice>;
 type TunWrite = Arc<Mutex<WriteHalf<AsyncDevice>>>; // Wrap with Arc<Mutex<>> so that multiple server recv threads can write to it
 
 // Only one send stream (one thread to read TUN packets)
-async fn server_send_stream(mut tun_read: TunRead, table: Arc<ClientTable>) {
+async fn server_send_stream(
+    mut tun_read: TunRead,
+    client_table: Arc<ClientTable>,
+    nat_table: NatTable,
+) {
     loop {
         let mut buffer: Vec<u8> = Vec::new();
         let result = tun_read.read_buf(&mut buffer).await;
@@ -55,16 +70,18 @@ async fn server_send_stream(mut tun_read: TunRead, table: Arc<ClientTable>) {
             }
         };
 
-        let client_addr = SocketAddrV4::from("127.0.0.1:3000".parse().unwrap());
+        let packet = Ipv4Packet::new(&mut buffer)?;
 
-        process_incoming_packet(buffer.clone());
+        if let Some(entry) = build_nat_entry(&packet) {
+            if let Some(existing_address) = nat_table.get_mut(&entry) {
+                if let Some(mut client_state) = client_table.get_mut(existing_address)
+                {
+                    _ = client_state.ssl_write.write(&buffer);
+                }
+            }
+        }
 
         println!("Sent {:?}", &buffer[..len]);
-
-        // Proceess packet here, get IP and port from higher level TCP/UDP
-        if let Some(mut client_state) = table.get_mut(&SocketAddr::from(client_addr)) {
-            _ = client_state.ssl_write.write(&buffer);
-        }
     }
 }
 
@@ -117,7 +134,7 @@ async fn acceptor(
 
         println!("Accepted new client");
         let (ssl_read, ssl_write) = split(ssl_stream);
-        
+
         let client_state = ClientConnectionState { ssl_write };
 
         state.insert(client_addr, client_state);

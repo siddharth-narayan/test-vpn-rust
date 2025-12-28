@@ -13,8 +13,7 @@ use pnet::
     }
 ;
 
-pub fn process_incoming_packet(mut buffer: Vec<u8>) -> Option<NatEntry> {
-    let p = Ipv4Packet::new(&mut buffer)?;
+pub fn build_nat_entry(mut packet: &Ipv4Packet) -> Option<NatEntry> {
 
     let dest_ip = p.get_source();
 
@@ -53,4 +52,4 @@ pub struct NatEntry {
     pub dest: SocketAddr,
 }
 
-type NatTable = Arc<DashMap<NatEntry, SocketAddr>>;
+pub type NatTable = DashMap<NatEntry, SocketAddr>;
