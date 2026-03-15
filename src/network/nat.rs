@@ -1,52 +1,70 @@
 use std::{
-    net::{SocketAddr, SocketAddrV4},
-    sync::Arc,
+    collections::HashMap, net::{SocketAddr}, sync::{Arc, Mutex, mpsc::Sender}
 };
 
-use dashmap::DashMap;
-use pnet::packet::{
-    ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
-    ipv4::Ipv4Packet,
-    tcp::TcpPacket,
-    udp::UdpPacket,
-};
+use pnet::packet::
+    ip::IpNextHeaderProtocol
+;
 
-pub fn build_nat_entry(mut packet: &Ipv4Packet) -> Option<NatEntry> {
-    let dest_ip = p.get_source();
+use crate::network::packet::BasePacket;
 
-    let protocol = p.get_next_level_protocol();
+// pub fn build_nat_entry(mut packet: &Ipv4Packet) -> Option<NatEntry> {
+//     let dest_ip = p.get_source();
 
-    if protocol != IpNextHeaderProtocols::Tcp || protocol != IpNextHeaderProtocols::Udp {
-        return None;
-    }
+//     let protocol = p.get_next_level_protocol();
 
-    // Flipped because on an incoming packet the order will be reversed compared to when
-    // the entry was put into the NAT table
-    let (dest_port, source_port) = match protocol {
-        IpNextHeaderProtocols::Tcp => {
-            let packet = TcpPacket::new(&mut buffer)?;
-            (packet.get_source(), packet.get_destination())
-        }
-        IpNextHeaderProtocols::Udp => {
-            let packet = UdpPacket::new(&mut buffer)?;
-            (packet.get_source(), packet.get_destination())
-        }
-        _ => return None,
-    };
+//     if protocol != IpNextHeaderProtocols::Tcp || protocol != IpNextHeaderProtocols::Udp {
+//         return None;
+//     }
 
-    let entry = NatEntry {
-        proto: protocol,
-        source_port: source_port,
-        dest: std::net::SocketAddr::V4(SocketAddrV4::new(dest_ip, dest_port)),
-    };
+//     // Flipped because on an incoming packet the order will be reversed compared to when
+//     // the entry was put into the NAT table
+//     let (dest_port, source_port) = match protocol {
+//         IpNextHeaderProtocols::Tcp => {
+//             let packet = TcpPacket::new(&mut buffer)?;
+//             (packet.get_source(), packet.get_destination())
+//         }
+//         IpNextHeaderProtocols::Udp => {
+//             let packet = UdpPacket::new(&mut buffer)?;
+//             (packet.get_source(), packet.get_destination())
+//         }
+//         _ => return None,
+//     };
 
-    Some(entry)
-}
+//     let entry = NatEntry {
+//         proto: protocol,
+//         source_port: source_port,
+//         dest: std::net::SocketAddr::V4(SocketAddrV4::new(dest_ip, dest_port)),
+//     };
 
+//     Some(entry)
+// }
+
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct NatEntry {
     pub proto: IpNextHeaderProtocol,
     pub source_port: u16,
     pub dest: SocketAddr,
 }
 
-pub type NatTable = DashMap<NatEntry, SocketAddr>;
+#[derive(Clone)]
+pub struct NatTable {
+    table: Arc<Mutex<HashMap<NatEntry, Sender<BasePacket>>>>
+}
+
+impl NatTable {
+    pub fn new() -> Self {
+        Self {
+            table: Arc::new(Mutex::new(HashMap::new()))
+        }
+    }
+
+    pub fn insert(&mut self, e: NatEntry, sender: Sender<BasePacket>) {
+
+    }
+
+    pub fn lookup(&self, e: NatEntry) -> Option<Sender<BasePacket>> {
+        let guard = self.table.lock().unwrap();
+        guard.get(&e).cloned()
+    }
+} 

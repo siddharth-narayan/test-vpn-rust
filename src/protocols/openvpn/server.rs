@@ -1,165 +1,38 @@
-use crate::{
-    network::{
-        device::get_default_tun,
-        nat::{NatTable, build_nat_entry, process_incoming_packet},
-        openssl::{SslRead, SslWrite, create_server_ctx},
-    },
-    protocols::{
-        fsm::FSM,
-        openvpn::{
-            packet::{MessageType, OpenVPNPacket},
-            protcol::{self, ClientState, build_openvpn_packet},
-        },
-    },
-};
-use std::{
-    collections::linked_list,
-    future,
-    io::Error,
-    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4},
-    pin::Pin,
-};
+use std::{net::TcpListener, sync::mpsc, thread};
 
-use pnet::
-    packet::{
-        ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
-        ipv4::Ipv4Packet,
-        tcp::TcpPacket,
-        udp::UdpPacket,
-    }
-;
+use openssl::ssl::{Ssl, SslStream};
 
-use dashmap::DashMap;
-use openssl::ssl::{Ssl, SslContext};
-use std::sync::Arc;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf, split},
-    net::{TcpListener, TcpStream},
-    sync::Mutex,
-};
-use tokio_openssl::SslStream;
-use tun::AsyncDevice;
+use crate::{network::openssl::create_server_ctx, protocols::{openvpn::protcol::{client_thread}, util::ProtocolThreadInfo}};
 
-type ClientTable = DashMap<SocketAddr, (ClientState, SslWrite)>;
-type TunRead = ReadHalf<AsyncDevice>;
-type TunWrite = Arc<Mutex<WriteHalf<AsyncDevice>>>; // Wrap with Arc<Mutex<>> so that multiple server recv threads can write to it
+pub fn openvpn_main_thread(thread_info: ProtocolThreadInfo) {
+    let ctx = create_server_ctx().unwrap();
 
-// Only one send stream (one thread to read TUN packets)
-async fn server_send_stream(
-    mut tun_read: TunRead,
-    client_table: Arc<ClientTable>,
-    nat_table: NatTable,
-) {
+    let listener = TcpListener::bind("0.0.0.0:443").unwrap();
+
     loop {
-        let mut buffer: Vec<u8> = Vec::new();
-        let result = tun_read.read_buf(&mut buffer).await;
-
-        let len = match result {
-            Ok(0) => {
-                println!("Send 0");
-                return;
-            }
-            Ok(n) => n,
-            Err(_) => {
-                println!("Send Err");
-                return;
+        let (tcp_stream, addr) = match listener.accept() {
+            Ok(x) => x,
+            Err(e) => {
+                continue
             }
         };
 
-        let ip_packet = Ipv4Packet::new(&mut buffer)?;
-
-        if let Some(entry) = build_nat_entry(&ip_packet) {
-            if let Some(existing_address) = nat_table.get_mut(&entry) {
-                if let Some(mut client_state) = client_table.get_mut(existing_address)
-                {
-                    let (state, client_ssl_write) = client_state.value();
-                    match state.state {
-                        protcol::ProtocolState::Connected => {
-                            let openvpn_packet = build_data_packet(state, ip_packet);
-                            client_ssl_write.write(openvpn_packet.serialize());
-                        },
-                        _ => todo!(),
-                    }
-                }
-            }
-        }
-
-        println!("Sent {:?}", &buffer[..len]);
-    }
-}
-
-// One recv stream for each client
-async fn server_recv_stream(mut ssl_read: SslRead, tun_write: TunWrite) {
-    loop {
-        let mut buffer: Vec<u8> = Vec::new();
-
-        let result = ssl_read.read_buf(&mut buffer).await;
-
-        let len = match result {
-            Ok(0) => {
-                println!("Recv 0");
-                return;
-            }
-            Ok(n) => n,
+        match tcp_stream.set_nonblocking(true) {
             Err(_) => {
-                println!("Recv Err");
-                return;
+                println!("oops, failed to set nonblocking");
+                continue;
             }
-        };
-
-        let ip_packet = reconstruct_openvpn_packet(buffer);
-
-        println!("Received {:?}", &buffer[..len]);
-
-        // let mut tun_write = tun_write.lock().await;
-
-        // Don't enable writing yet
-        // _ = tun_write.write(&buffer);
-    }
-}
-
-// Accepts incoming client connections, then spawns the necessary threads
-async fn acceptor(
-    ctx: SslContext,
-    state: Arc<ClientTable>,
-    tun_write: TunWrite, // For adding to recv stream for each client
-) -> Result<(SslRead, SslWrite), Error> {
-    let listener = TcpListener::bind("0.0.0.0:8080").await.unwrap();
-
-    loop {
-        let ssl = Ssl::new(&ctx)?;
-        let (stream, client_addr) = listener.accept().await.unwrap();
-        let mut ssl_stream = SslStream::new(ssl, stream)?;
-        let handshake_result = Pin::new(&mut ssl_stream).accept().await;
-        if handshake_result.is_err() {
-            eprintln!("{}", handshake_result.unwrap_err());
-            let _ = ssl_stream.shutdown().await;
-            continue;
+            _ => ()
         }
+        let ssl = Ssl::new(&ctx).unwrap();
+        let ssl_stream = SslStream::new(ssl, tcp_stream).unwrap();
 
-        println!("Accepted new client");
-        let (ssl_read, ssl_write) = split(ssl_stream);
+        let sender = thread_info.packet_write_stream
+        .clone();
 
-        let client_state = ClientConnectionState { ssl_write };
-
-        state.insert(client_addr, client_state);
-        tokio::spawn(server_recv_stream(ssl_read, tun_write.clone()));
+        thread::spawn(move || {
+            client_thread(ssl_stream, sender)
+        });
     }
-}
-
-pub async fn main() {
-    let client_table = ClientTable::new();
-
-    let client_table: Arc<ClientTable> = Arc::new(client_table);
-
-    let tun = get_default_tun();
-
-    let (tun_read, tun_write) = split(tun);
-    let tun_write: TunWrite = Arc::from(Mutex::from(tun_write));
-
-    let ctx = create_server_ctx();
-    let ctx = ctx.unwrap();
-
-    tokio::spawn(acceptor(ctx, client_table.clone(), tun_write));
-    tokio::spawn(server_send_stream(tun_read, client_table.clone()));
+    
 }

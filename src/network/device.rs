@@ -1,6 +1,6 @@
-use tun::AsyncDevice;
+use tun::Device;
 
-pub fn get_default_tun() -> AsyncDevice {
+pub fn get_default_tun() -> Device {
     let mut tun_config = tun::Configuration::default();
     
     tun_config.address("72.100.100.100");
@@ -14,7 +14,5 @@ pub fn get_default_tun() -> AsyncDevice {
         std::process::exit(-1);
     }
 
-    let device = device.unwrap();
-    // device.set_nonblock();
-    AsyncDevice::new(device).unwrap()
+    device.unwrap()
 }

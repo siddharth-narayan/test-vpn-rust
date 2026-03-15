@@ -1,13 +1,10 @@
-use pnet::packet::{
-    ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
-    ipv4::{Ipv4Packet, MutableIpv4Packet},
-    tcp::{MutableTcpOptionPacket, TcpOptionPacket, TcpPacket},
-    udp::UdpPacket,
-};
+use pnet::packet::
+    ipv4::Ipv4Packet
+;
 
-use std::{error::Error, ffi::CString, net::SocketAddrV4};
+use std::ffi::CString;
 
-use crate::{network::nat::NatEntry, protocols::openvpn::protcol};
+use crate::{network::{nat::NatEntry, packet::BasePacket}, protocols::openvpn::protcol::{self, OpenVPNConnection}};
 
 #[allow(non_camel_case_types)]
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
@@ -25,9 +22,7 @@ pub enum MessageType {
     P_CONTROL_HARD_RESET_CLIENT_V3,
 }
 
-struct PacketAck {
-
-}
+struct PacketAck {}
 
 impl PacketAck {
     pub fn len(&self) -> usize {
@@ -43,8 +38,35 @@ pub struct OpenVPNPacket {
 }
 
 impl OpenVPNPacket {
-    fn new(p_type: MessageType) -> Self {
-        OpenVPNPacket { packet_len: 0, message_type: , key_id: (), payload: () }
+    pub fn new(p_type: MessageType, payload: GenericPacket) -> Self {
+        OpenVPNPacket {
+            packet_len: 0,
+            message_type: p_type,
+            key_id: 0,
+            payload: payload,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum OpenVPNPacketConvErr {
+
+}
+
+impl<'a> TryFrom<Ipv4Packet<'a>> for OpenVPNPacket {
+    type Error = OpenVPNPacketConvErr;
+    fn try_from(value: Ipv4Packet) -> Result<Self, Self::Error> {
+        // OpenVPNPacket {
+            
+        // }
+        todo!()
+    }
+}
+
+impl Into<BasePacket> for OpenVPNPacket {
+    fn into(self) -> BasePacket {
+        // BasePacket { layer: PacketLayer::L2, src: (), dst: (), payload: () }
+        todo!()
     }
 }
 
@@ -55,9 +77,11 @@ enum GenericPacket {
 }
 
 impl GenericPacket {
-    pub fn len(&self) {
+    pub fn len(&self) -> usize {
         match self {
-            GenericPacket::CiphertextControlPacket(ciphertext_control_packet) => ciphertext_control_packet.payload.len(),
+            GenericPacket::CiphertextControlPacket(ciphertext_control_packet) => {
+                ciphertext_control_packet.payload.len()
+            }
             GenericPacket::PlaintextControlPacket(plaintext_control_packet) => todo!(),
             GenericPacket::DataPacket(data_packet) => todo!(),
         }
@@ -75,19 +99,28 @@ struct CiphertextControlPacket {
 
 impl CiphertextControlPacket {
     pub fn new(session: u64, payload: Vec<u8>) -> Self {
-        CiphertextControlPacket { session_id: session, hmac: None, replay_packet_id: 0, packet_acks: Vec::new(), packet_id: 0, payload: payload }
+        CiphertextControlPacket {
+            session_id: session,
+            hmac: None,
+            replay_packet_id: 0,
+            packet_acks: Vec::new(),
+            packet_id: 0,
+            payload: payload,
+        }
     }
 
     pub fn len(&self) {
         let mut len: usize = 24; // 3 x u64 = 24 bytes
-        
+
         if self.hmac.is_some() {
             len += self.hmac.clone().unwrap().len();
         }
 
-        len += self.packet_acks.iter().map(|packet_ack| {
-            packet_ack.len()
-        }).sum::<usize>();
+        len += self
+            .packet_acks
+            .iter()
+            .map(|packet_ack| packet_ack.len())
+            .sum::<usize>();
 
         len += self.payload.len()
     }
@@ -96,7 +129,7 @@ impl CiphertextControlPacket {
         let mut out: Vec<u8> = Vec::new();
 
         out.extend(self.session_id.to_le_bytes());
-        
+
         if self.hmac.is_some() {
             out.append(&mut self.hmac.unwrap())
         }
@@ -150,10 +183,6 @@ impl PlaintextControlPacket {
     }
 }
 
-struct DataPacket {
+struct DataPacket {}
 
-}
-
-impl DataPacket {
-
-}
+impl DataPacket {}

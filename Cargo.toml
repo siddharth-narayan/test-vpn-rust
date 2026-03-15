@@ -12,13 +12,6 @@ name = "server"
 path = "src/server.rs"
 
 [dependencies]
-clap = { version = "4.5.53", features = ["derive"] }
-dashmap = "6.1.0"
-figment = "0.10.19"
-libc = "0.2.178"
 openssl = "0.10.75"
 pnet = "0.35.0"
-serde = "1.0.228"
-tokio = { version = "1", features = ["full"] }
-tokio-openssl = "0.6"
-tun = { version="0.7", features = ["async"] }
+tun = { version="0.7"}
