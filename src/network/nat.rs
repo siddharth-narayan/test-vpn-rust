@@ -1,10 +1,10 @@
 use std::{
-    collections::HashMap, net::{SocketAddr}, sync::{Arc, Mutex, mpsc::Sender}
+    collections::HashMap,
+    net::{SocketAddr, SocketAddrV4},
+    sync::{Arc, Mutex, mpsc::Sender},
 };
 
-use pnet::packet::
-    ip::IpNextHeaderProtocol
-;
+use pnet::packet::ip::IpNextHeaderProtocol;
 
 use crate::network::packet::BasePacket;
 
@@ -40,6 +40,12 @@ use crate::network::packet::BasePacket;
 //     Some(entry)
 // }
 
+impl From<Box<BasePacket>> for NatEntry {
+    fn from(value: Box<BasePacket>) -> Self {
+        todo!()
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct NatEntry {
     pub proto: IpNextHeaderProtocol,
@@ -47,24 +53,32 @@ pub struct NatEntry {
     pub dest: SocketAddr,
 }
 
+impl From<&Box<BasePacket>> for NatEntry {
+    fn from(p: &Box<BasePacket>) -> Self {
+        NatEntry {
+            proto: p.proto,
+            source_port: p.src.port(),
+            dest: p.dst,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct NatTable {
-    table: Arc<Mutex<HashMap<NatEntry, Sender<BasePacket>>>>
+    table: Arc<Mutex<HashMap<NatEntry, Sender<Box<BasePacket>>>>>,
 }
 
 impl NatTable {
     pub fn new() -> Self {
         Self {
-            table: Arc::new(Mutex::new(HashMap::new()))
+            table: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    pub fn insert(&mut self, e: NatEntry, sender: Sender<BasePacket>) {
+    pub fn insert(&mut self, e: NatEntry, sender: Sender<Box<BasePacket>>) {}
 
-    }
-
-    pub fn lookup(&self, e: NatEntry) -> Option<Sender<BasePacket>> {
+    pub fn lookup(&self, e: NatEntry) -> Option<Sender<Box<BasePacket>>> {
         let guard = self.table.lock().unwrap();
         guard.get(&e).cloned()
     }
-} 
+}

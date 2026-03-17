@@ -3,3 +3,4 @@ pub mod device;
 pub mod openssl;
 pub mod nat;
 pub mod packet;
+pub mod hub;

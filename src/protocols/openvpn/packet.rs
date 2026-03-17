@@ -53,6 +53,16 @@ pub enum OpenVPNPacketConvErr {
 
 }
 
+impl TryFrom<Box<BasePacket>> for OpenVPNPacket {
+    type Error = OpenVPNPacketConvErr;
+    fn try_from(value: Box<BasePacket>) -> Result<Self, Self::Error> {
+        // OpenVPNPacket {
+            
+        // }
+        todo!()
+    }
+}
+
 impl<'a> TryFrom<Ipv4Packet<'a>> for OpenVPNPacket {
     type Error = OpenVPNPacketConvErr;
     fn try_from(value: Ipv4Packet) -> Result<Self, Self::Error> {
@@ -66,6 +76,12 @@ impl<'a> TryFrom<Ipv4Packet<'a>> for OpenVPNPacket {
 impl Into<BasePacket> for OpenVPNPacket {
     fn into(self) -> BasePacket {
         // BasePacket { layer: PacketLayer::L2, src: (), dst: (), payload: () }
+        todo!()
+    }
+}
+
+impl Into<Box<[u8]>> for OpenVPNPacket {
+    fn into(self) -> Box<[u8]> {
         todo!()
     }
 }

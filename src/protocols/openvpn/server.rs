@@ -1,10 +1,11 @@
-use std::{net::TcpListener, sync::mpsc, thread};
+use std::{net::TcpListener, sync::mpsc::{self, Sender}, thread};
 
 use openssl::ssl::{Ssl, SslStream};
 
-use crate::{network::openssl::create_server_ctx, protocols::{openvpn::protcol::{client_thread}, util::ProtocolThreadInfo}};
+use crate::{network::{hub::Hub, nat::NatTable, openssl::create_server_ctx, packet::BasePacket}, protocols::openvpn::protcol::client_thread};
 
-pub fn openvpn_main_thread(thread_info: ProtocolThreadInfo) {
+
+pub fn openvpn_main_thread(hub: Hub) {
     let ctx = create_server_ctx().unwrap();
 
     let listener = TcpListener::bind("0.0.0.0:443").unwrap();
@@ -27,11 +28,12 @@ pub fn openvpn_main_thread(thread_info: ProtocolThreadInfo) {
         let ssl = Ssl::new(&ctx).unwrap();
         let ssl_stream = SslStream::new(ssl, tcp_stream).unwrap();
 
-        let sender = thread_info.packet_write_stream
+        let sender_clone = hub.tx()
         .clone();
+        let nat_clone = hub.table();
 
         thread::spawn(move || {
-            client_thread(ssl_stream, sender)
+            client_thread(ssl_stream, sender_clone, nat_clone)
         });
     }
     

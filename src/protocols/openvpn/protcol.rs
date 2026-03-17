@@ -1,10 +1,10 @@
-use std::{io::{Read, Write}, sync::{mpsc::{Receiver, Sender}}};
+use std::{io::{Read, Write}, sync::mpsc::{self, Receiver, Sender, TryRecvError}};
 
 use openssl::ssl::{ErrorCode, SslStream};
 use pnet::packet::ipv4::Ipv4Packet;
 
 use crate::{
-    network::packet::{BasePacket}, protocols::openvpn::packet::{OpenVPNPacket}
+    network::{hub::HubClientTable, nat::NatTable, packet::BasePacket}, protocols::openvpn::packet::OpenVPNPacket
 };
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
@@ -37,10 +37,6 @@ impl<T: Read + Write> OpenVPNConnection<T> {
         }
     }
 
-    pub fn send_packet(&mut self, packet: Box<BasePacket>) {
-        // self.stream.ssl_write();
-    }
-
     pub fn try_recv_packet(&mut self) -> Result<Box<BasePacket>, OpenVPNPacketRecvError> {
         let mut buf = [0u8; 256];
         
@@ -61,14 +57,14 @@ impl<T: Read + Write> OpenVPNConnection<T> {
         };
 
         let openvpn_packet = OpenVPNPacket::try_from(packet);
-        
-        // let packet = BasePacket {
-        //     layer: PacketLayer::L2,
-        //     src: 
-        //     payload: Box::new(buf)
-        // };
 
         Ok(Box::new(openvpn_packet.unwrap().into()))
+    }
+
+    pub fn send_packet(&mut self, packet: Box<BasePacket>) {
+        let openvpn_packet = OpenVPNPacket::try_from(packet).unwrap();
+        let bytes = Into::<Box<[u8]>>::into(openvpn_packet);
+        self.stream.ssl_write(bytes.as_ref());
     }
 
     // to_openvpn_packet()
@@ -81,14 +77,18 @@ pub enum OpenVPNPacketRecvError {
 }
 
 // Do it all in a single thread!
-pub fn client_thread<T: Read + Write>(stream: SslStream<T>, tx: Sender<Box<BasePacket>>) {
+pub fn client_thread<T: Read + Write>(stream: SslStream<T>, self_tx: Sender<Box<BasePacket>>, mut nat: HubClientTable) {
     let mut connection = OpenVPNConnection::new(stream);
 
+    // Each thread has its own tx/rx pair for _receiving_ base packets (after a NAT entry is matched)
+    let (hub_tx, self_rx) = mpsc::channel::<Box<BasePacket>>();
+
     loop {
-        // Self -> Peer
+        // Peer -> Self
         match connection.try_recv_packet() {
             Ok(p) => {
-                tx.send(p);
+                nat.insert(&p, hub_tx.clone());
+                let _= self_tx.send(p);
             },
             Err(e) => {
                 match e {
@@ -99,7 +99,21 @@ pub fn client_thread<T: Read + Write>(stream: SslStream<T>, tx: Sender<Box<BaseP
         }
 
         // Peer -> Self
+        match self_rx.try_recv() {
+            Ok(p) => {
+                connection.send_packet(p);
+            },
+            Err(e) => {
+                match e {
+                    TryRecvError::Empty => {
 
+                    },
+                    TryRecvError::Disconnected => {
+                        panic!()
+                    }
+                }
+            }
+        }
 
         
     }
