@@ -1,9 +1,8 @@
-use std::{net::TcpListener, sync::mpsc::{self, Sender}, thread};
+use std::{net::TcpListener, thread};
 
 use openssl::ssl::{Ssl, SslStream};
 
-use crate::{network::{hub::Hub, nat::NatTable, openssl::create_server_ctx, packet::BasePacket}, protocols::openvpn::protcol::client_thread};
-
+use crate::{network::{hub::Hub, openssl::create_server_ctx}, protocols::openvpn::protcol::client_thread};
 
 pub fn openvpn_main_thread(hub: Hub) {
     let ctx = create_server_ctx().unwrap();
@@ -11,9 +10,9 @@ pub fn openvpn_main_thread(hub: Hub) {
     let listener = TcpListener::bind("0.0.0.0:443").unwrap();
 
     loop {
-        let (tcp_stream, addr) = match listener.accept() {
+        let (tcp_stream, _addr) = match listener.accept() {
             Ok(x) => x,
-            Err(e) => {
+            Err(_e) => {
                 continue
             }
         };

@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     io::Write,
-    net::{IpAddr, SocketAddr},
+    net::{IpAddr},
     sync::{
         Arc, Mutex,
         mpsc::{self, Receiver, Sender},
@@ -74,6 +74,9 @@ impl Hub {
 
         let (client_tx, hub_rx) = mpsc::channel::<Box<BasePacket>>();
 
+        // For now just drop this so the receiver doesn't hang up when there are no clients
+        drop(client_tx.clone());
+
         let table_clone = client_table.clone();
         thread::spawn(move || hub_packet_processor(hub_rx, tun, table_clone));
 
@@ -98,8 +101,9 @@ fn hub_packet_processor(hub_rx: Receiver<Box<BasePacket>>, mut tun: Device, tabl
         match hub_rx.try_recv() {
             Ok(p) => {
                 let buf: Box<[u8]> = p.into();
+                println!("received bytes: {:?}", buf);
 
-                tun.write(buf.as_ref());
+                let _ = tun.write(buf.as_ref());
             }
 
             Err(e) => match e {
@@ -113,7 +117,7 @@ fn hub_packet_processor(hub_rx: Receiver<Box<BasePacket>>, mut tun: Device, tabl
         match tun.recv(buf.as_mut()) {
             Ok(x) => match Box::<BasePacket>::try_from(buf) {
                 Ok(p) => {
-                    let p = Box::new(p);
+                    // let p = Box::new(p);
                     table.lookup(&p);
                 },
                 Err(e) => {
@@ -121,7 +125,7 @@ fn hub_packet_processor(hub_rx: Receiver<Box<BasePacket>>, mut tun: Device, tabl
                 }
             },
             Err(e) => {
-                todo!()
+                // todo!()
             }
         }
     }

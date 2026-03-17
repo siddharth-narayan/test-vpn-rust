@@ -24,4 +24,6 @@ fn main() {
     thread::spawn(move || {
         openvpn::server::openvpn_main_thread(hub)
     });
+
+    loop {}
 }

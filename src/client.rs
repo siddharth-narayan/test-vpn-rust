@@ -23,6 +23,6 @@ fn main() {
     let hub = Hub::new(hub_settings);
 
     thread::spawn(move || {
-        openvpn::server::openvpn_main_thread(hub)
+        openvpn::client::openvpn_main_thread(hub)
     });
 }

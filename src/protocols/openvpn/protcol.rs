@@ -1,10 +1,12 @@
-use std::{io::{Read, Write}, sync::mpsc::{self, Receiver, Sender, TryRecvError}};
+// #[allow(unused)]
+
+use std::{io::{Read, Write}, sync::mpsc::{self, Sender, TryRecvError}};
 
 use openssl::ssl::{ErrorCode, SslStream};
 use pnet::packet::ipv4::Ipv4Packet;
 
 use crate::{
-    network::{hub::HubClientTable, nat::NatTable, packet::BasePacket}, protocols::openvpn::packet::OpenVPNPacket
+    network::{hub::HubClientTable, packet::BasePacket}, protocols::openvpn::packet::OpenVPNPacket
 };
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
