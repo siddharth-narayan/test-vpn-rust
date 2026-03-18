@@ -9,12 +9,11 @@ use std::{
     thread,
 };
 
+use pnet::packet::{ethernet::EthernetPacket, ipv4::Ipv4Packet, ipv6::Ipv6Packet};
 use tun::Device;
 
 use crate::network::{
-    device::get_default_tun,
-    nat::{NatEntry, NatTable},
-    packet::BasePacket,
+device::get_default_tun, nat::{NatEntry, NatTable}, packet::{Address, BasePacket, Layer, PacketType}
 };
 
 #[derive(Clone)]
@@ -23,29 +22,58 @@ pub enum HubClientTable {
     Nat(NatTable),
 
     // Maps IpAddr entries to send halves
-    Base(Arc<Mutex<HashMap<IpAddr, Sender<Box<BasePacket>>>>>),
+    Base(Arc<Mutex<HashMap<Address, Sender<Box<BasePacket>>>>>),
 }
 
 impl HubClientTable {
     pub fn insert(&mut self, p: &Box<BasePacket>, tx: Sender<Box<BasePacket>>) {
         match self {
-            HubClientTable::Nat(x) => x.insert(NatEntry::from(p), tx),
+            HubClientTable::Nat(x) => {
+                let entry = match NatEntry::try_from(p) {
+                    Ok(e) => e,
+                    Err(_) => {
+                        return;
+                    }
+                };
+
+                x.insert(entry, tx)
+            },
 
             HubClientTable::Base(x) => {
                 let mut guard = x.lock().unwrap();
-                guard.insert(p.dst.ip(), tx.clone());
+                match p.get_address() {
+                    Some(a) => {
+                        guard.insert(a, tx.clone());
+                    },
+                    _ => ()
+                }
             }
         }
     }
 
-    pub fn lookup(&self, e: &Box<BasePacket>) -> Option<Sender<Box<BasePacket>>> {
+    pub fn lookup(&self, p: &Box<BasePacket>) -> Option<Sender<Box<BasePacket>>> {
         match self {
-            HubClientTable::Nat(x) => x.lookup(NatEntry::from(e)),
+            HubClientTable::Nat(x) => {
+                let entry = match NatEntry::try_from(p) {
+                    Ok(e) => e,
+                    Err(_) => {
+                        return None
+                    }
+                };
 
-            HubClientTable::Base(x) => {
-                let guard = x.lock().unwrap();
-                guard.get(&e.dst.ip()).cloned()
-            }
+                x.lookup(entry)
+            },
+
+            _ => None
+            // HubClientTable::Base(x) => {
+            //     let guard = x.lock().unwrap();
+            //     let addr = match p.p_type {
+            //         PacketType::IPv4 => {
+
+            //         }
+            //     }
+            //     guard.get(&p.dst.ip()).cloned()
+            // }
         }
     }
 }
@@ -53,6 +81,7 @@ impl HubClientTable {
 #[derive(Clone)]
 pub struct HubSettings {
     pub use_nat: bool,
+    pub layer: Layer,
 }
 
 pub struct Hub {
@@ -69,7 +98,7 @@ impl Hub {
             HubClientTable::Base(Arc::new(Mutex::new(HashMap::new())))
         };
 
-        let tun = get_default_tun();
+        let tun = get_default_tun(settings.layer);
         tun.set_nonblock().unwrap();
 
         let (client_tx, hub_rx) = mpsc::channel::<Box<BasePacket>>();
@@ -117,15 +146,12 @@ fn hub_packet_processor(hub_rx: Receiver<Box<BasePacket>>, mut tun: Device, tabl
         match tun.recv(buf.as_mut()) {
             Ok(x) => match Box::<BasePacket>::try_from(buf) {
                 Ok(p) => {
-                    // let p = Box::new(p);
-                    table.lookup(&p);
                 },
                 Err(e) => {
                     ()
                 }
             },
             Err(e) => {
-                // todo!()
             }
         }
     }

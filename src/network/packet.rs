@@ -1,18 +1,63 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
-use pnet::packet::{FromPacket, Packet, ethernet::EthernetPacket, ip::IpNextHeaderProtocol, ipv4::Ipv4Packet, tcp::TcpPacket};
+use pnet::{
+    packet::{
+        FromPacket, Packet, ethernet::EthernetPacket, ip::IpNextHeaderProtocol, ipv4::Ipv4Packet, ipv6::Ipv6Packet, tcp::TcpPacket
+    },
+    util::MacAddr,
+};
 
-pub enum PacketLayer {
-    L2,
-    L3,
+pub type Layer = tun::Layer;
+
+#[derive(PartialEq)]
+pub enum PacketType {
+    Ethernet,
+    IPv4,
+    IPv6,
+}
+
+#[derive(Eq, Hash, PartialEq)]
+pub enum Address {
+    IPv4(Ipv4Addr),
+    IPv6(Ipv6Addr),
+    MAC(MacAddr),
 }
 
 pub struct BasePacket {
-    pub layer: PacketLayer,
-    pub proto: IpNextHeaderProtocol,
-    pub src: SocketAddr, 
-    pub dst: SocketAddr,
-    pub payload: Box<[u8]>
+    pub p_type: PacketType,
+    pub payload: Box<[u8]>,
+}
+
+impl BasePacket {
+    pub fn get_address(&self) -> Option<Address> {
+        let address = match self.p_type {
+            PacketType::Ethernet => {
+                if let Some(packet) = EthernetPacket::new(self.payload.as_ref()) {
+                    Address::MAC(packet.get_destination())
+                } else {
+                    return None;
+                }
+            }
+
+            PacketType::IPv4 => {
+                if let Some(packet) = Ipv4Packet::new(self.payload.as_ref()) {
+                    Address::IPv4(packet.get_destination())
+                } else {
+                    return None;
+                }
+            }
+
+            PacketType::IPv6 => {
+                if let Some(packet) = Ipv6Packet::new(self.payload.as_ref()) {
+                    Address::IPv6(packet.get_destination())
+                } else {
+                    return None;
+                }
+            }
+        };
+
+        Some(address)
+    }
 }
 
 impl Into<Box<[u8]>> for Box<BasePacket> {
@@ -23,37 +68,26 @@ impl Into<Box<[u8]>> for Box<BasePacket> {
 
 pub enum BasePacketError {
     NotEnoughBytes,
-    ParseError
+    ParseError,
 }
 
 impl TryFrom<Box<[u8]>> for Box<BasePacket> {
     type Error = BasePacketError;
     fn try_from(value: Box<[u8]>) -> Result<Self, Self::Error> {
         if value.len() < 1 {
-            return Err(BasePacketError::NotEnoughBytes)
+            return Err(BasePacketError::NotEnoughBytes);
         }
 
-        // EthernetPacket::new()
-
-        // match value[]
         let ip_packet = match Ipv4Packet::new(value.as_ref()) {
             Some(p) => p,
             None => {
                 println!("Failed to construct IPv4 packet");
-                return Err(BasePacketError::ParseError)
+                return Err(BasePacketError::ParseError);
             }
         };
 
-        // TcpPacket::new(ip_packet.packet());
-
-        println!("{:?}", value);
+        println!("{:?}", ip_packet);
 
         Err(BasePacketError::ParseError)
-        // Ok(Box::new(BasePacket {
-        //     layer: PacketLayer::L2,
-
-        //     src: IpAddr::V4(Ipv4Addr::LOCALHOST),
-        //     dst: IpAddr::V4(Ipv4Addr::LOCALHOST),
-        // }))
     }
 }

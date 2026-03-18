@@ -4,9 +4,15 @@ use std::{
     sync::{Arc, Mutex, mpsc::Sender},
 };
 
-use pnet::packet::ip::IpNextHeaderProtocol;
+use pnet::packet::{
+    Packet,
+    ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
+    ipv4::Ipv4Packet,
+    tcp::TcpPacket,
+    udp::UdpPacket,
+};
 
-use crate::network::packet::BasePacket;
+use crate::network::packet::{BasePacket, PacketType};
 
 // pub fn build_nat_entry(mut packet: &Ipv4Packet) -> Option<NatEntry> {
 //     let dest_ip = p.get_source();
@@ -40,12 +46,6 @@ use crate::network::packet::BasePacket;
 //     Some(entry)
 // }
 
-impl From<Box<BasePacket>> for NatEntry {
-    fn from(value: Box<BasePacket>) -> Self {
-        todo!()
-    }
-}
-
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct NatEntry {
     pub proto: IpNextHeaderProtocol,
@@ -53,13 +53,54 @@ pub struct NatEntry {
     pub dest: SocketAddr,
 }
 
-impl From<&Box<BasePacket>> for NatEntry {
-    fn from(p: &Box<BasePacket>) -> Self {
-        NatEntry {
-            proto: p.proto,
-            source_port: p.src.port(),
-            dest: p.dst,
+pub enum NatEntryError {
+    NotIPv4,
+    // The underlying buffer is not long enough
+    BufferSize,
+    NotTCPorUDP,
+}
+
+impl TryFrom<&Box<BasePacket>> for NatEntry {
+    type Error = NatEntryError;
+    fn try_from(p: &Box<BasePacket>) -> Result<Self, Self::Error> {
+        if p.p_type != PacketType::IPv4 {
+            return Err(NatEntryError::NotIPv4);
         }
+
+        let packet = match Ipv4Packet::new(&p.payload) {
+            Some(p) => p,
+            None => return Err(NatEntryError::BufferSize),
+        };
+
+        // Flipped because on an incoming packet the order will be reversed compared to when
+        // the entry was put into the NAT table
+        let proto = packet.get_next_level_protocol();
+        let (dest_port, source_port) = match proto {
+            IpNextHeaderProtocols::Tcp => {
+                if let Some(packet) = TcpPacket::new(packet.packet()) {
+                    (packet.get_source(), packet.get_destination())
+                } else {
+                    return Err(NatEntryError::BufferSize);
+                }
+            }
+
+            IpNextHeaderProtocols::Udp => {
+                if let Some(packet) = UdpPacket::new(packet.packet()) {
+                    (packet.get_source(), packet.get_destination())
+                } else {
+                    return Err(NatEntryError::BufferSize);
+                }
+            }
+            _ => {
+                return Err(NatEntryError::NotTCPorUDP)
+            },
+        };
+
+        Ok(NatEntry {
+            proto: proto,
+            source_port: source_port,
+            dest: (packet.get_destination(), dest_port).into(),
+        })
     }
 }
 
