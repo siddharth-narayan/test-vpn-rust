@@ -12,6 +12,7 @@ name = "server"
 path = "src/server.rs"
 
 [dependencies]
+binrw = "0.15.1"
 openssl = "0.10.75"
 pnet = "0.35.0"
 tun = { version="0.7"}

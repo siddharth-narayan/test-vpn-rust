@@ -1,39 +1,55 @@
 use std::{net::TcpListener, thread};
 
-use openssl::ssl::{Ssl, SslStream};
+use openssl::ssl::{HandshakeError, Ssl, SslAcceptor, SslFiletype, SslMethod, SslStream};
 
-use crate::{network::{hub::Hub, openssl::create_server_ctx}, protocols::openvpn::protcol::client_thread};
+use crate::{
+    network::{hub::Hub, openssl::create_server_ctx},
+    protocols::openvpn::protcol::client_thread,
+};
 
+#[allow(dead_code)]
 pub fn openvpn_main_thread(hub: Hub) {
-    let ctx = create_server_ctx().unwrap();
-
     let listener = TcpListener::bind("0.0.0.0:443").unwrap();
+    let mut ssl_acceptor_builder =
+        SslAcceptor::mozilla_intermediate(SslMethod::tls_server()).unwrap();
+    ssl_acceptor_builder.set_certificate_file("cert.pem", SslFiletype::PEM);
+    ssl_acceptor_builder.set_private_key_file("key.pem", SslFiletype::PEM);
+
+    let ssl_acceptor = ssl_acceptor_builder.build();
 
     loop {
-        let (tcp_stream, _addr) = match listener.accept() {
-            Ok(x) => x,
+        let tcp_stream = match listener.accept() {
+            Ok(x) => {
+                // x.0.set_nonblocking(true).unwrap_or_else(|_| {
+                //     println!("Failed to set nonblocking");
+                // });
+
+                x.0
+            }
             Err(_e) => {
-                continue
+                println!("TCP Accept error");
+                continue;
             }
         };
 
-        match tcp_stream.set_nonblocking(true) {
-            Err(_) => {
-                println!("oops, failed to set nonblocking");
+        let handshake = ssl_acceptor.accept(tcp_stream);
+        let ssl_stream = match handshake {
+            Ok(s) => s,
+            Err(e) => {
+                println!("{}", e);
                 continue;
-            }
-            _ => ()
-        }
-        let ssl = Ssl::new(&ctx).unwrap();
-        let ssl_stream = SslStream::new(ssl, tcp_stream).unwrap();
+            } //     Err(HandshakeError::WouldBlock(mhs)) => {
+              //         // Wait for socket to be readable, then retry
+              //         mhs.get_mut()
+              //     }
+              // }
+        };
 
-        let sender_clone = hub.tx()
-        .clone();
+        ssl_stream.get_ref().set_nonblocking(true);
+
+        let sender_clone = hub.tx().clone();
         let nat_clone = hub.table();
 
-        thread::spawn(move || {
-            client_thread(ssl_stream, sender_clone, nat_clone)
-        });
+        thread::spawn(move || client_thread(ssl_stream, sender_clone, nat_clone));
     }
-    
 }

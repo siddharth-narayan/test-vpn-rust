@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap,
     io::Write,
-    net::{IpAddr},
     sync::{
         Arc, Mutex,
         mpsc::{self, Receiver, Sender},
@@ -9,11 +8,12 @@ use std::{
     thread,
 };
 
-use pnet::packet::{ethernet::EthernetPacket, ipv4::Ipv4Packet, ipv6::Ipv6Packet};
 use tun::Device;
 
 use crate::network::{
-device::get_default_tun, nat::{NatEntry, NatTable}, packet::{Address, BasePacket, Layer, PacketType}
+    device::get_default_tun,
+    nat::{NatEntry, NatTable},
+    packet::{Address, BasePacket, Layer},
 };
 
 #[derive(Clone)]
@@ -37,15 +37,15 @@ impl HubClientTable {
                 };
 
                 x.insert(entry, tx)
-            },
+            }
 
             HubClientTable::Base(x) => {
                 let mut guard = x.lock().unwrap();
                 match p.get_address() {
                     Some(a) => {
                         guard.insert(a, tx.clone());
-                    },
-                    _ => ()
+                    }
+                    _ => (),
                 }
             }
         }
@@ -56,24 +56,21 @@ impl HubClientTable {
             HubClientTable::Nat(x) => {
                 let entry = match NatEntry::try_from(p) {
                     Ok(e) => e,
-                    Err(_) => {
-                        return None
-                    }
+                    Err(_) => return None,
                 };
 
                 x.lookup(entry)
-            },
+            }
 
-            _ => None
-            // HubClientTable::Base(x) => {
-            //     let guard = x.lock().unwrap();
-            //     let addr = match p.p_type {
-            //         PacketType::IPv4 => {
+            _ => None, // HubClientTable::Base(x) => {
+                       //     let guard = x.lock().unwrap();
+                       //     let addr = match p.p_type {
+                       //         PacketType::IPv4 => {
 
-            //         }
-            //     }
-            //     guard.get(&p.dst.ip()).cloned()
-            // }
+                       //         }
+                       //     }
+                       //     guard.get(&p.dst.ip()).cloned()
+                       // }
         }
     }
 }
@@ -145,14 +142,10 @@ fn hub_packet_processor(hub_rx: Receiver<Box<BasePacket>>, mut tun: Device, tabl
 
         match tun.recv(buf.as_mut()) {
             Ok(x) => match Box::<BasePacket>::try_from(buf) {
-                Ok(p) => {
-                },
-                Err(e) => {
-                    ()
-                }
+                Ok(p) => {}
+                Err(e) => (),
             },
-            Err(e) => {
-            }
+            Err(e) => {}
         }
     }
 }

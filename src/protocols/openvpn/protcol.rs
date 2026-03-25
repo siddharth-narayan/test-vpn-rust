@@ -1,13 +1,28 @@
 // #[allow(unused)]
 
-use std::{io::{Read, Write}, sync::mpsc::{self, Sender, TryRecvError}};
+use std::{
+    io::{Read, Write},
+    sync::mpsc::{self, Sender, TryRecvError},
+};
 
 use openssl::ssl::{ErrorCode, SslStream};
-use pnet::packet::ipv4::Ipv4Packet;
+use pnet::packet::{Packet, ipv4::Ipv4Packet};
 
 use crate::{
-    network::{hub::HubClientTable, packet::BasePacket}, protocols::openvpn::packet::OpenVPNPacket
+    network::{hub::HubClientTable, packet::BasePacket},
+    protocols::openvpn::packet::OpenVPNPacket,
 };
+
+pub enum ProcolMode {
+    TLS,
+    UDP,
+}
+
+pub enum OpenVPNPacketRecvError {
+    OpenSSLNoData,
+    OpenSSLRealErr,
+    Ipv4PacketConstructionErr,
+}
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub enum ProtocolState {
@@ -18,6 +33,7 @@ pub enum ProtocolState {
 }
 
 pub struct OpenVPNConnection<T: Read + Write> {
+    pub connection_mode: ProcolMode,
     pub status: ProtocolState,
     pub session_id: u64,
     pub sent_bytes: u64,
@@ -30,6 +46,7 @@ pub struct OpenVPNConnection<T: Read + Write> {
 impl<T: Read + Write> OpenVPNConnection<T> {
     pub fn new(s: SslStream<T>) -> Self {
         Self {
+            connection_mode: ProcolMode::TLS,
             status: ProtocolState::Unconnected,
             session_id: 0, // Todo?
             sent_bytes: 0,
@@ -41,45 +58,48 @@ impl<T: Read + Write> OpenVPNConnection<T> {
 
     pub fn try_recv_packet(&mut self) -> Result<Box<BasePacket>, OpenVPNPacketRecvError> {
         let mut buf = [0u8; 256];
-        
+
         match self.stream.ssl_read(&mut buf) {
             Err(e) => {
+                // println!("Ecode: {}", e);
                 if e.code() == ErrorCode::WANT_READ {
-                    return Err(OpenVPNPacketRecvError::OpenSSLNoData)
+                    return Err(OpenVPNPacketRecvError::OpenSSLNoData);
                 } else {
-                    return Err(OpenVPNPacketRecvError::OpenSSLRealErr)
+                    return Err(OpenVPNPacketRecvError::OpenSSLRealErr);
                 }
             }
-            _ => ()
+            _ => (),
         };
+
+        println!("Got sttufff");
 
         let packet = match Ipv4Packet::new(&buf) {
             Some(p) => p,
-            None => return Err(OpenVPNPacketRecvError::Ipv4PacketConstructionErr)
+            None => return Err(OpenVPNPacketRecvError::Ipv4PacketConstructionErr),
         };
 
-        let openvpn_packet = OpenVPNPacket::try_from(packet);
+        // let openvpn_packet = (packet);
 
-        Ok(Box::new(openvpn_packet.unwrap().into()))
+        // Ok(Box::new(openvpn_packet.unwrap().into()))
+        todo!()
     }
 
     pub fn send_packet(&mut self, packet: Box<BasePacket>) {
-        let openvpn_packet = OpenVPNPacket::try_from(packet).unwrap();
-        let bytes = Into::<Box<[u8]>>::into(openvpn_packet);
-        self.stream.ssl_write(bytes.as_ref());
+        // let openvpn_packet = OpenVPNPacket::try_from(packet).unwrap();
+        // let bytes = Into::<Box<[u8]>>::into(openvpn_packet);
+        // self.stream.ssl_write(bytes.as_ref());
     }
 
     // to_openvpn_packet()
 }
 
-pub enum OpenVPNPacketRecvError {
-    OpenSSLNoData,
-    OpenSSLRealErr,
-    Ipv4PacketConstructionErr
-}
-
 // Do it all in a single thread!
-pub fn client_thread<T: Read + Write>(stream: SslStream<T>, self_tx: Sender<Box<BasePacket>>, mut nat: HubClientTable) {
+pub fn client_thread<T: Read + Write>(
+    mut stream: SslStream<T>,
+    self_tx: Sender<Box<BasePacket>>,
+    mut nat: HubClientTable,
+) {
+    stream.accept();
     let mut connection = OpenVPNConnection::new(stream);
 
     // Each thread has its own tx/rx pair for _receiving_ base packets (after a NAT entry is matched)
@@ -90,12 +110,12 @@ pub fn client_thread<T: Read + Write>(stream: SslStream<T>, self_tx: Sender<Box<
         match connection.try_recv_packet() {
             Ok(p) => {
                 nat.insert(&p, hub_tx.clone());
-                let _= self_tx.send(p);
-            },
+                let _ = self_tx.send(p);
+            }
             Err(e) => {
                 match e {
-                    OpenVPNPacketRecvError::OpenSSLRealErr => todo!(),
-                    _ => ()
+                    OpenVPNPacketRecvError::OpenSSLRealErr => println!("openssl real error"),
+                    _ => (),
                 };
             }
         }
@@ -104,20 +124,14 @@ pub fn client_thread<T: Read + Write>(stream: SslStream<T>, self_tx: Sender<Box<
         match self_rx.try_recv() {
             Ok(p) => {
                 connection.send_packet(p);
-            },
-            Err(e) => {
-                match e {
-                    TryRecvError::Empty => {
-
-                    },
-                    TryRecvError::Disconnected => {
-                        panic!()
-                    }
-                }
             }
+            Err(e) => match e {
+                TryRecvError::Empty => {}
+                TryRecvError::Disconnected => {
+                    panic!()
+                }
+            },
         }
-
-        
     }
 }
 

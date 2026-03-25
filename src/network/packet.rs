@@ -2,7 +2,8 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use pnet::{
     packet::{
-        FromPacket, Packet, ethernet::EthernetPacket, ip::IpNextHeaderProtocol, ipv4::Ipv4Packet, ipv6::Ipv6Packet, tcp::TcpPacket
+        FromPacket, Packet, ethernet::EthernetPacket, ip::IpNextHeaderProtocol, ipv4::Ipv4Packet,
+        ipv6::Ipv6Packet, tcp::TcpPacket,
     },
     util::MacAddr,
 };

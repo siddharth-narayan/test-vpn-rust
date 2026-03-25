@@ -8,17 +8,14 @@ mod network;
 mod protocols;
 
 fn main() {
-
     let hub_settings = HubSettings {
         layer: Layer::L3,
-        use_nat: false
+        use_nat: false,
     };
-    
+
     let hub = Hub::new(hub_settings);
 
-    thread::spawn(move || {
-        openvpn::client::openvpn_main_thread(hub)
-    });
+    thread::spawn(move || openvpn::client::openvpn_main_thread(hub));
 
     loop {}
 }

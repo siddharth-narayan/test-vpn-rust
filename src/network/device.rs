@@ -4,7 +4,7 @@ use crate::network::packet::Layer;
 
 pub fn get_default_tun(layer: Layer) -> Device {
     let mut tun_config = tun::Configuration::default();
-    
+
     tun_config.layer(layer);
     tun_config.address("72.100.100.100");
     // tun_config.layer(tun::Layer::L2);
