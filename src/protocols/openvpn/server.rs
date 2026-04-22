@@ -1,10 +1,10 @@
 use std::{net::TcpListener, thread};
-
+use serde::{Serialize, Deserialize};
 use openssl::ssl::{HandshakeError, Ssl, SslAcceptor, SslFiletype, SslMethod, SslStream};
 
 use crate::{
-    network::{hub::Hub, openssl::create_server_ctx},
-    protocols::openvpn::protcol::client_thread,
+    network::{hub::Hub, openssl::{BufferedSsl, create_server_ctx}},
+    protocols::openvpn::protcol::{OpenVPNConnection, connection_thread},
 };
 
 #[allow(dead_code)]
@@ -33,16 +33,12 @@ pub fn openvpn_main_thread(hub: Hub) {
         };
 
         let handshake = ssl_acceptor.accept(tcp_stream);
-        let ssl_stream = match handshake {
+        let mut ssl_stream = match handshake {
             Ok(s) => s,
             Err(e) => {
                 println!("{}", e);
                 continue;
-            } //     Err(HandshakeError::WouldBlock(mhs)) => {
-              //         // Wait for socket to be readable, then retry
-              //         mhs.get_mut()
-              //     }
-              // }
+            }
         };
 
         ssl_stream.get_ref().set_nonblocking(true);
@@ -50,6 +46,8 @@ pub fn openvpn_main_thread(hub: Hub) {
         let sender_clone = hub.tx().clone();
         let nat_clone = hub.table();
 
-        thread::spawn(move || client_thread(ssl_stream, sender_clone, nat_clone));
+        ssl_stream.accept();
+        let connection = OpenVPNConnection::new(BufferedSsl::new(ssl_stream));
+        thread::spawn(move || connection_thread(connection, sender_clone, nat_clone));
     }
 }

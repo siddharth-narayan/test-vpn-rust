@@ -13,6 +13,9 @@ path = "src/server.rs"
 
 [dependencies]
 binrw = "0.15.1"
+clap = { version = "4", features = ["derive"] }
+figment = { version = "0.10.19", features = ["env", "toml"] }
 openssl = "0.10.75"
 pnet = "0.35.0"
+serde = { version = "1.0.228", features = ["derive"] }
 tun = { version="0.7"}

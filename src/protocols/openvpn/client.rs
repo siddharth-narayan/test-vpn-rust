@@ -3,8 +3,8 @@ use std::{net::TcpStream, sync::mpsc::Sender, thread};
 use openssl::ssl::{Ssl, SslConnector, SslMethod, SslStream, SslVerifyMode};
 
 use crate::{
-    network::{hub::Hub, openssl::create_client_ctx, packet::BasePacket},
-    protocols::openvpn::protcol::client_thread,
+    network::{hub::Hub, openssl::{BufferedSsl, create_client_ctx}, packet::BasePacket},
+    protocols::openvpn::protcol::{OpenVPNConnection, connection_thread},
 };
 
 #[allow(dead_code)]
@@ -20,5 +20,6 @@ pub fn openvpn_main_thread(hub: Hub) {
     let sender_clone = hub.tx();
     let nat_clone = hub.table();
 
-    thread::spawn(move || client_thread(ssl_stream, sender_clone, nat_clone));
+    let mut connection = OpenVPNConnection::new(BufferedSsl::new(ssl_stream));
+    thread::spawn(move || connection_thread(connection, sender_clone, nat_clone));
 }
