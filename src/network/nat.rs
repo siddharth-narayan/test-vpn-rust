@@ -1,18 +1,14 @@
 use std::{
     collections::HashMap,
-    net::{SocketAddr, SocketAddrV4},
+    net::SocketAddr,
     sync::{Arc, Mutex, mpsc::Sender},
 };
 
 use pnet::packet::{
-    Packet,
-    ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
-    ipv4::Ipv4Packet,
-    tcp::TcpPacket,
-    udp::UdpPacket,
+    Packet, ip::{IpNextHeaderProtocol, IpNextHeaderProtocols}, ipv4::Ipv4Packet, tcp::TcpPacket, udp::UdpPacket
 };
 
-use crate::network::packet::{BasePacket, PacketType};
+use crate::network::{packet::{BasePacket, PacketRepr}, util::PacketProtocol};
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct NatEntry {
@@ -28,19 +24,16 @@ pub enum NatEntryError {
     NotTCPorUDP,
 }
 
-impl TryFrom<&Box<BasePacket>> for NatEntry {
+impl TryFrom<&BasePacket> for NatEntry {
     type Error = NatEntryError;
-    fn try_from(p: &Box<BasePacket>) -> Result<Self, Self::Error> {
-        if p.p_type != PacketType::IPv4 {
+    fn try_from(p: &BasePacket) -> Result<Self, Self::Error> {
+        if p.proto() != PacketProtocol::IPv4 {
             return Err(NatEntryError::NotIPv4);
-        }
-
-        let packet = match Ipv4Packet::new(&p.payload) {
-            Some(p) => p,
-            None => return Err(NatEntryError::BufferSize),
         };
 
-        // Flipped because on an incoming packet the order will be reversed compared to when
+        let packet = Ipv4Packet::new(p.raw_ref()).unwrap();
+
+        // Flipped because on an incoming packet the order will be reversed comparaw to when
         // the entry was put into the NAT table
         let proto = packet.get_next_level_protocol();
         let (dest_port, source_port) = match proto {
@@ -72,7 +65,7 @@ impl TryFrom<&Box<BasePacket>> for NatEntry {
 
 #[derive(Clone)]
 pub struct NatTable {
-    table: Arc<Mutex<HashMap<NatEntry, Sender<Box<BasePacket>>>>>,
+    table: Arc<Mutex<HashMap<NatEntry, Sender<BasePacket>>>>,
 }
 
 impl NatTable {
@@ -82,9 +75,9 @@ impl NatTable {
         }
     }
 
-    pub fn insert(&mut self, e: NatEntry, sender: Sender<Box<BasePacket>>) {}
+    pub fn insert(&mut self, e: NatEntry, sender: Sender<BasePacket>) {}
 
-    pub fn lookup(&self, e: NatEntry) -> Option<Sender<Box<BasePacket>>> {
+    pub fn lookup(&self, e: NatEntry) -> Option<Sender<BasePacket>> {
         let guard = self.table.lock().unwrap();
         guard.get(&e).cloned()
     }

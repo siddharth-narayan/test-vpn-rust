@@ -2,7 +2,7 @@
 use clap::Parser;
 use figment::{
     Figment,
-    providers::{Env, Format, Serialized, Toml},
+    providers::{Env, Format, Toml},
     error::Error,
 };
 use serde::{Serialize, Deserialize};

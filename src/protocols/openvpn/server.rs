@@ -1,9 +1,8 @@
 use std::{net::TcpListener, thread};
-use serde::{Serialize, Deserialize};
-use openssl::ssl::{HandshakeError, Ssl, SslAcceptor, SslFiletype, SslMethod, SslStream};
+use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 
 use crate::{
-    network::{hub::Hub, openssl::{BufferedSsl, create_server_ctx}},
+    network::{hub::Hub, openssl::BufferedSsl},
     protocols::openvpn::protcol::{OpenVPNConnection, connection_thread},
 };
 
@@ -12,8 +11,8 @@ pub fn openvpn_main_thread(hub: Hub) {
     let listener = TcpListener::bind("0.0.0.0:443").unwrap();
     let mut ssl_acceptor_builder =
         SslAcceptor::mozilla_intermediate(SslMethod::tls_server()).unwrap();
-    ssl_acceptor_builder.set_certificate_file("cert.pem", SslFiletype::PEM);
-    ssl_acceptor_builder.set_private_key_file("key.pem", SslFiletype::PEM);
+    ssl_acceptor_builder.set_certificate_file("cert.pem", SslFiletype::PEM).unwrap();
+    ssl_acceptor_builder.set_private_key_file("key.pem", SslFiletype::PEM).unwrap();
 
     let ssl_acceptor = ssl_acceptor_builder.build();
 
@@ -41,13 +40,18 @@ pub fn openvpn_main_thread(hub: Hub) {
             }
         };
 
-        ssl_stream.get_ref().set_nonblocking(true);
+        if let Err(_) = ssl_stream.get_ref().set_nonblocking(true) {
+            continue;
+        }
 
         let sender_clone = hub.tx().clone();
         let nat_clone = hub.table();
 
-        ssl_stream.accept();
-        let connection = OpenVPNConnection::new(BufferedSsl::new(ssl_stream));
+        if let Err(_) = ssl_stream.accept() {
+            continue;
+        }
+
+        let connection = OpenVPNConnection::new(BufferedSsl::new(ssl_stream), tun::Layer::L3);
         thread::spawn(move || connection_thread(connection, sender_clone, nat_clone));
     }
 }

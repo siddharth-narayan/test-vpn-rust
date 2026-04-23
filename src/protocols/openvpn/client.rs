@@ -1,9 +1,9 @@
-use std::{net::TcpStream, sync::mpsc::Sender, thread};
+use std::{net::TcpStream, thread};
 
-use openssl::ssl::{Ssl, SslConnector, SslMethod, SslStream, SslVerifyMode};
+use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
 
 use crate::{
-    network::{hub::Hub, openssl::{BufferedSsl, create_client_ctx}, packet::BasePacket},
+    network::{hub::Hub, openssl::BufferedSsl, util::Layer},
     protocols::openvpn::protcol::{OpenVPNConnection, connection_thread},
 };
 
@@ -15,11 +15,11 @@ pub fn openvpn_main_thread(hub: Hub) {
     ssl_connector_builder.set_verify(SslVerifyMode::NONE);
     let ssl_connector = ssl_connector_builder.build();
 
-    let ssl_stream = ssl_connector.connect("", tcp_stream).unwrap();
+    let ssl_stream = ssl_connector.connect("127.0.0.1", tcp_stream).unwrap();
 
     let sender_clone = hub.tx();
     let nat_clone = hub.table();
 
-    let mut connection = OpenVPNConnection::new(BufferedSsl::new(ssl_stream));
+    let connection = OpenVPNConnection::new(BufferedSsl::new(ssl_stream), Layer::L2);
     thread::spawn(move || connection_thread(connection, sender_clone, nat_clone));
 }

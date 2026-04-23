@@ -1,6 +1,6 @@
 use tun::Device;
 
-use crate::network::packet::Layer;
+use crate::network::util::Layer;
 
 pub fn get_default_tun(layer: Layer) -> Device {
     let mut tun_config = tun::Configuration::default();

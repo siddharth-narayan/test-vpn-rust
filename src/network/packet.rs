@@ -1,23 +1,23 @@
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::{net::{Ipv4Addr, Ipv6Addr}, ops::Add};
 
 use pnet::{
     packet::{
-        FromPacket, Packet, ethernet::EthernetPacket, ip::IpNextHeaderProtocol, ipv4::Ipv4Packet,
-        ipv6::Ipv6Packet, tcp::TcpPacket,
+        ethernet::EthernetPacket, ipv4::Ipv4Packet,
+        ipv6::Ipv6Packet,
     },
     util::MacAddr,
 };
 
-pub type Layer = tun::Layer;
+use crate::network::util::{Layer, PacketProtocol};
 
 #[derive(PartialEq)]
-pub enum PacketType {
-    Ethernet,
-    IPv4,
-    IPv6,
+pub enum PacketRepr<'a> {
+    Ethernet(EthernetPacket<'a>),
+    IPv4(Ipv4Packet<'a>),
+    IPv6(Ipv6Packet<'a>),
 }
 
-#[derive(Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub enum Address {
     IPv4(Ipv4Addr),
     IPv6(Ipv6Addr),
@@ -25,70 +25,98 @@ pub enum Address {
 }
 
 pub struct BasePacket {
-    pub p_type: PacketType,
-    pub payload: Box<[u8]>,
+    layer: Layer,
+    proto: PacketProtocol,
+
+    src: Address,
+    dst: Address,
+
+    raw: Box<[u8]>
 }
 
 impl BasePacket {
-    pub fn get_address(&self) -> Option<Address> {
-        let address = match self.p_type {
-            PacketType::Ethernet => {
-                if let Some(packet) = EthernetPacket::new(self.payload.as_ref()) {
-                    Address::MAC(packet.get_destination())
-                } else {
-                    return None;
-                }
-            }
+    pub fn new(layer: Layer, bytes: Vec<u8>) -> Option<Self> {
+        let raw = bytes.into_boxed_slice();
 
-            PacketType::IPv4 => {
-                if let Some(packet) = Ipv4Packet::new(self.payload.as_ref()) {
-                    Address::IPv4(packet.get_destination())
-                } else {
-                    return None;
-                }
-            }
+        Some(Self {
+            layer: layer,
+            proto: packet_proto(layer, &raw)?,
 
-            PacketType::IPv6 => {
-                if let Some(packet) = Ipv6Packet::new(self.payload.as_ref()) {
-                    Address::IPv6(packet.get_destination())
-                } else {
-                    return None;
-                }
-            }
-        };
-
-        Some(address)
+            src: packet_src(layer, &raw)?,
+            dst: packet_dst(layer, &raw)?,
+            raw: raw
+        })
     }
-}
 
-impl Into<Box<[u8]>> for Box<BasePacket> {
-    fn into(self) -> Box<[u8]> {
-        todo!()
+    pub fn raw_ref(&self) -> &Box<[u8]> {
+        &self.raw
     }
+
+    pub fn proto(&self) -> PacketProtocol {
+        self.proto
+    }
+
+    pub fn dst(&self) -> Address {
+        self.dst
+    }
+
+
 }
 
-pub enum BasePacketError {
-    NotEnoughBytes,
-    ParseError,
-}
+fn packet_proto(layer: Layer, packet: &Box<[u8]>) -> Option<PacketProtocol> {
+    match layer {
+        Layer::L2 => {
+            return Some(PacketProtocol::Ethernet);
+        },
 
-impl TryFrom<Box<[u8]>> for Box<BasePacket> {
-    type Error = BasePacketError;
-    fn try_from(value: Box<[u8]>) -> Result<Self, Self::Error> {
-        if value.len() < 1 {
-            return Err(BasePacketError::NotEnoughBytes);
+        Layer::L3 => {
+            let repr = Ipv4Packet::new(packet)?;
+
+            if repr.get_version() == 4 {
+                return Some(PacketProtocol::IPv4);
+            } else {
+                return Some(PacketProtocol::IPv6);
+            }
         }
+    }
+}
 
-        let ip_packet = match Ipv4Packet::new(value.as_ref()) {
-            Some(p) => p,
-            None => {
-                println!("Failed to construct IPv4 packet");
-                return Err(BasePacketError::ParseError);
+fn packet_src(layer: Layer, packet: &Box<[u8]>) -> Option<Address> {
+    match layer {
+        Layer::L2 => {
+            let repr = EthernetPacket::new(packet)?;
+            return Some(Address::MAC(repr.get_source()));
+        },
+
+        Layer::L3 => {
+            let repr = Ipv4Packet::new(packet)?;
+
+            if repr.get_version() == 4 {
+                return Some(Address::IPv4(repr.get_source()));
+            } else {
+                let repr_v6 = Ipv6Packet::new(packet)?;
+                return Some(Address::IPv6(repr_v6.get_source()));
             }
-        };
+        }
+    }
+}
 
-        println!("{:?}", ip_packet);
+fn packet_dst(layer: Layer, packet: &Box<[u8]>) -> Option<Address> {
+    match layer {
+        Layer::L2 => {
+            let repr = EthernetPacket::new(packet)?;
+            return Some(Address::MAC(repr.get_destination()));
+        },
 
-        Err(BasePacketError::ParseError)
+        Layer::L3 => {
+            let repr = Ipv4Packet::new(packet)?;
+
+            if repr.get_version() == 4 {
+                return Some(Address::IPv4(repr.get_destination()));
+            } else {
+                let repr_v6 = Ipv6Packet::new(packet)?;
+                return Some(Address::IPv6(repr_v6.get_destination()));
+            }
+        }
     }
 }

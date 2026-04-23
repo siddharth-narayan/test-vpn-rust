@@ -1,15 +1,6 @@
 use binrw::{Endian::Little, binrw, helpers::until_eof, meta::{EndianKind, ReadEndian}};
-use pnet::packet::{Packet, ipv4::Ipv4Packet};
 
-use std::{
-    ffi::{CStr, CString},
-    io::{Read, Write},
-};
 
-use crate::{
-    network::{nat::NatEntry, packet::BasePacket},
-    protocols::openvpn::protcol::{self, OpenVPNConnection},
-};
 
 #[binrw]
 #[brw(repr=u8)]

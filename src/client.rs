@@ -1,7 +1,7 @@
 use std::thread;
 
 use crate::network::hub::{Hub, HubSettings};
-use crate::network::packet::Layer;
+use crate::network::util::Layer;
 use crate::protocols::openvpn;
 
 mod network;
