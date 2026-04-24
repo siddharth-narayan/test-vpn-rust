@@ -20,6 +20,6 @@ pub fn openvpn_main_thread(hub: Hub) {
     let sender_clone = hub.tx();
     let nat_clone = hub.table();
 
-    let connection = OpenVPNConnection::new(BufferedSsl::new(ssl_stream), Layer::L2);
+    let connection = OpenVPNConnection::new(BufferedSsl::new(ssl_stream), Layer::L3);
     thread::spawn(move || connection_thread(connection, sender_clone, nat_clone));
 }

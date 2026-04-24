@@ -1,20 +1,20 @@
 // #[allow(unused)]
 
 use std::{
-    io::{Cursor, BufReader, Read, Write},
+    io::{self, BufReader, Cursor, ErrorKind, Read, Write},
     sync::mpsc::{self, Sender, TryRecvError},
 };
 
-use binrw::BinRead;
+use binrw::{BinRead, BinWrite};
 
 use crate::{
     network::{hub::HubClientTable, openssl::BufferedSsl, packet::BasePacket, util::{Layer, PacketProtocol, TransportProtocol}},
-    protocols::openvpn::packet::OpenVPNPacket,
+    protocols::openvpn::packet::{DataPacket, GenericPacket, OpenVPNPacket},
 };
 
 pub enum OpenVPNPacketRecvError {
     OpenSSLNoData,
-    OpenSSLRealErr,
+    OpenSSLRealErr(std::io::Error),
     PacketConstructionErr,
 }
 
@@ -53,24 +53,32 @@ impl<T: Read + Write> OpenVPNConnection<T> {
     }
 
     pub fn try_recv_packet(&mut self) -> Result<BasePacket, OpenVPNPacketRecvError> {
-        let mut buf = Vec::new();
-        if let Err(_) = self.stream.read_to_end(&mut buf) {
-            return Err(OpenVPNPacketRecvError::OpenSSLRealErr)
-        }
+        let mut buf = [0u8; 512];
+
+        if let Err(x) = self.stream.read(&mut buf) {
+            if x.kind() == ErrorKind::WouldBlock {
+                return Err(OpenVPNPacketRecvError::OpenSSLNoData)
+            } else {
+                return Err(OpenVPNPacketRecvError::OpenSSLRealErr(x))
+            }
+        };
 
         let mut reader  = BufReader::new(Cursor::new(buf));
         let openvpn_packet = match OpenVPNPacket::read(&mut reader) {
             Ok(p) => p,
-            Err(_) => {
+            Err(e) => {
                 return Err(OpenVPNPacketRecvError::PacketConstructionErr);
             }
         };
+
+        // BasePacket::new(self.layer, openvpn_packet);
 
         todo!()
     }
 
     pub fn send_packet(&mut self, packet: BasePacket) {
-
+        let inner  = DataPacket::new();
+        OpenVPNPacket::new(MessageType::P_DATA_V2, packet.raw_ref())
     }
 
     // to_openvpn_packet()
@@ -94,8 +102,8 @@ pub fn connection_thread<T: Read + Write>(
             }
             Err(e) => {
                 match e {
-                    OpenVPNPacketRecvError::OpenSSLRealErr => {
-                        println!("openssl real error");
+                    OpenVPNPacketRecvError::OpenSSLRealErr(e) => {
+                        println!("openssl real error: {}", e);
                     },
                     _ => (),
                 };

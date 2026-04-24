@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    io::Read,
+    io::{ErrorKind, Read, Write},
     sync::{
         Arc, Mutex,
         mpsc::{self, Receiver, Sender},
@@ -123,7 +123,7 @@ fn hub_packet_processor(hub_rx: Receiver<BasePacket>, mut tun: Device, table: Hu
     loop {
         match hub_rx.try_recv() {
             Ok(p) => {
-                // let _ = tun.write();
+                let _ = tun.write(p.raw_ref());
             }
 
             Err(e) => match e {
@@ -132,10 +132,18 @@ fn hub_packet_processor(hub_rx: Receiver<BasePacket>, mut tun: Device, table: Hu
             },
         }
 
-        let mut buf = Vec::new();
-        
-        if let Ok(_) = tun.read_to_end(buf.as_mut()) {
-            BasePacket::new(Layer::L2, buf);
+        let mut buf = [0u8; 512];
+
+        match tun.read(buf.as_mut()) {
+            Ok(_) => {
+                println!("TUN received bytes: {:?}", buf);
+                BasePacket::new(Layer::L3, buf.to_vec());
+            },
+            Err(e) => {
+                if (e.kind() != ErrorKind::WouldBlock) {
+                    println!("Failed to read from TUN: {}", e);
+                }
+            }
         };
     }
 }
