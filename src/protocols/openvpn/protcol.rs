@@ -9,7 +9,7 @@ use binrw::{BinRead, BinWrite};
 
 use crate::{
     network::{hub::HubClientTable, openssl::BufferedSsl, packet::BasePacket, util::{Layer, PacketProtocol, TransportProtocol}},
-    protocols::openvpn::packet::{DataPacket, GenericPacket, OpenVPNPacket},
+    protocols::openvpn::packet::{DataPacket, GenericPacket, MessageType, OpenVPNPacket},
 };
 
 pub enum OpenVPNPacketRecvError {
@@ -77,8 +77,10 @@ impl<T: Read + Write> OpenVPNConnection<T> {
     }
 
     pub fn send_packet(&mut self, packet: BasePacket) {
-        let inner  = DataPacket::new();
-        OpenVPNPacket::new(MessageType::P_DATA_V2, packet.raw_ref())
+        // packet.raw_ref()
+        // let inner  = GenericPacket::DataPacket(DataPacket::new());
+        
+        // OpenVPNPacket::new(MessageType::P_DATA_V2, inner);
     }
 
     // to_openvpn_packet()

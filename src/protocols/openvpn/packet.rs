@@ -1,6 +1,8 @@
+use std::{marker::PhantomData, time::SystemTime};
+
 use binrw::{
     Endian::Little,
-    binrw, binwrite,
+    binrw,
     helpers::until_eof,
     meta::{EndianKind, ReadEndian, WriteEndian},
 };
@@ -21,6 +23,18 @@ pub enum MessageType {
     P_CONTROL_HARD_RESET_CLIENT_V3,
 }
 
+pub enum AuthType {
+    CBC
+}
+
+impl AuthType {
+    pub fn auth_len(_type: Self) -> usize {
+        match _type {
+            Self::CBC => 4
+        }
+    }
+}
+
 #[binrw]
 struct PacketAck {
     packet_num: u32, // The packet number that is acknowledged
@@ -39,6 +53,7 @@ pub struct OpenVPNPacket {
     message_type: MessageType, // (5 bits)
     key_id: u8, // (3 bits)
 
+    #[br(args(packet_len - 2 - 1 - 1))]
     payload: GenericPacket,
 }
 
@@ -61,6 +76,7 @@ impl OpenVPNPacket {
 }
 
 #[binrw]
+#[br(import(len: u16))]
 pub enum GenericPacket {
     CiphertextControlPacket(CiphertextControlPacket),
     PlaintextControlPacket(PlaintextControlPacket), // Obsolete?
@@ -78,6 +94,7 @@ impl GenericPacket {
 }
 
 #[binrw]
+#[br(import(len: u16))]
 pub struct CiphertextControlPacket {
     session_id: u64,
 
@@ -140,23 +157,39 @@ impl PlaintextControlPacket {
     }
 }
 
+impl !Default for DataPacket {}
+
 #[binrw]
-#[br(import(max_len: usize))]
+#[br(import(len: u8))]
+#[derive(Debug)]
 pub struct DataPacket {
     // 24-bits
     #[br(parse_with = binrw::helpers::read_u24)]
     #[bw(write_with = binrw::helpers::write_u24)]
     peer_id: u32,
+
+    #[br(count = AuthType::auth_len(AuthType::CBC))]
     auth_data: Vec<u8>,
+
+    #[br(count = 4)]
     payload: Vec<u8>,
 }
 
 impl DataPacket {
-    pub fn new() -> Self {
-        Self {}
-    }
+    // pub fn new() -> Self {
+    //     Self {}
+    // }
 
     pub fn len(&self) -> usize {
-        0
+        100
     }
+}
+
+
+impl ReadEndian for DataPacket {
+    const ENDIAN: EndianKind = EndianKind::Endian(Little);
+}
+
+impl WriteEndian for DataPacket {
+    const ENDIAN: EndianKind = EndianKind::Endian(Little);
 }

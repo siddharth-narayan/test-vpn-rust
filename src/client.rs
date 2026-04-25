@@ -1,3 +1,5 @@
+#![feature(negative_impls)]
+
 use std::thread;
 
 use crate::network::hub::{Hub, HubSettings};

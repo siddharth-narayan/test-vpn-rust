@@ -140,7 +140,7 @@ fn hub_packet_processor(hub_rx: Receiver<BasePacket>, mut tun: Device, table: Hu
                 BasePacket::new(Layer::L3, buf.to_vec());
             },
             Err(e) => {
-                if (e.kind() != ErrorKind::WouldBlock) {
+                if e.kind() != ErrorKind::WouldBlock {
                     println!("Failed to read from TUN: {}", e);
                 }
             }

@@ -20,7 +20,13 @@
           overlays = [fenix.overlays.default];
         };
 
-        naersk' = pkgs.callPackage naersk {};
+        toolchain = pkgs.fenix.complete.toolchain;
+        
+        naersk' = naersk.lib.${system}.override {
+          cargo = toolchain;
+          rustc = toolchain;
+        };
+
       in rec {
         defaultPackage = naersk'.buildPackage {
           src = ./.;
@@ -37,13 +43,7 @@
             
             alejandra
             rust-analyzer
-            (pkgs.fenix.stable.withComponents [
-              "cargo"
-              "clippy"
-              "rust-src"
-              "rustc"
-              "rustfmt"
-            ])
+            toolchain
           ];
         };
       }
