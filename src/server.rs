@@ -1,4 +1,5 @@
 #![feature(negative_impls)]
+#![feature(associated_type_defaults)]
 
 use std::thread;
 
