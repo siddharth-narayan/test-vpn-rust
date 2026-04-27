@@ -12,6 +12,7 @@ name = "server"
 path = "src/server.rs"
 
 [dependencies]
+binrw = "0.15.1"
 byteorder = "1.5.0"
 clap = { version = "4", features = ["derive"] }
 figment = { version = "0.10.19", features = ["env", "toml"] }

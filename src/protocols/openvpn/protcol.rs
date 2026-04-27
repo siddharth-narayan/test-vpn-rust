@@ -1,15 +1,15 @@
 // #[allow(unused)]
 
 use std::{
-    io::{self, BufReader, Cursor, ErrorKind, Read, Write},
+    io::{BufReader, Cursor, ErrorKind, Read, Write},
     sync::mpsc::{self, Sender, TryRecvError},
 };
 
-use binrw::{BinRead, BinWrite};
+use binrw::BinRead;
 
 use crate::{
-    network::{hub::HubClientTable, openssl::BufferedSsl, packet::BasePacket, util::{Layer, PacketProtocol, TransportProtocol}},
-    protocols::openvpn::packet::{DataPacket, GenericPacket, MessageType, OpenVPNPacket},
+    network::{hub::HubClientTable, openssl::BufferedSsl, packet::BasePacket, util::{Layer, TransportProtocol}},
+    protocols::openvpn::packet::OpenVPNPacket,
 };
 
 pub enum OpenVPNPacketRecvError {
@@ -64,9 +64,9 @@ impl<T: Read + Write> OpenVPNConnection<T> {
         };
 
         let mut reader  = BufReader::new(Cursor::new(buf));
-        let openvpn_packet = match OpenVPNPacket::read(&mut reader) {
+        let _openvpn_packet = match OpenVPNPacket::read(&mut reader) {
             Ok(p) => p,
-            Err(e) => {
+            Err(_e) => {
                 return Err(OpenVPNPacketRecvError::PacketConstructionErr);
             }
         };
@@ -76,7 +76,7 @@ impl<T: Read + Write> OpenVPNConnection<T> {
         todo!()
     }
 
-    pub fn send_packet(&mut self, packet: BasePacket) {
+    pub fn send_packet(&mut self, _packet: BasePacket) {
         // packet.raw_ref()
         // let inner  = GenericPacket::DataPacket(DataPacket::new());
         

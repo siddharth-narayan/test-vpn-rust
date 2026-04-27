@@ -1,14 +1,18 @@
-use std::{marker::PhantomData, time::SystemTime};
-
 use binrw::{
-    Endian::Little,
+    Endian::Big,
     binrw,
     helpers::until_eof,
     meta::{EndianKind, ReadEndian, WriteEndian},
 };
 
+use crate::protocols::openvpn::packet::{control_channel::ControlChannelPacket, data_channel::DataChannelPacket};
+
+pub mod control_channel;
+pub mod data_channel;
+
 #[binrw]
 #[brw(repr=u8)]
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
 #[allow(non_camel_case_types)]
 pub enum MessageType {
     P_CONTROL_HARD_RESET_CLIENT_V1 = 1,
@@ -21,6 +25,12 @@ pub enum MessageType {
     P_CONTROL_HARD_RESET_SERVER_V2,
     P_DATA_V2,
     P_CONTROL_HARD_RESET_CLIENT_V3,
+}
+
+impl From<u8> for MessageType {
+    fn from(a: u8) -> Self {
+        unsafe { std::mem::transmute::<u8, Self>(a) }
+    }
 }
 
 pub enum AuthType {
@@ -36,160 +46,60 @@ impl AuthType {
 }
 
 #[binrw]
-struct PacketAck {
-    packet_num: u32, // The packet number that is acknowledged
+#[derive(Debug)]
+struct PacketAck(u32); // The packet number that is acknowledged
+pub struct PacketLen(u16);
+
+impl Into<u16> for PacketLen {
+    fn into(self) -> u16 {
+        self.0
+    }
 }
 
 // ==========================
 // ===== Packet structs =====
 // ==========================
 #[binrw]
+#[derive(Debug)]
 pub struct OpenVPNPacket {
     #[br(temp)]
-    #[bw(calc = (2 + 1 + 1 + payload.len()).try_into().unwrap())]
+    #[bw(calc = 2)]
     packet_len: u16,
 
-    #[brw(restore_position)]
+    #[br(temp)]
+    #[bw(calc = ((*message_type as u8) << 3) + key_id)]
+    type_key_tuple: u8,
+
+    #[br(calc = MessageType::from(type_key_tuple >> 3))]
+    #[bw(ignore)]
     message_type: MessageType, // (5 bits)
+    #[br(calc = type_key_tuple &  0b0000_0111u8)]
+    #[bw(ignore)]
     key_id: u8, // (3 bits)
 
-    #[br(args(packet_len - 2 - 1 - 1))]
+    #[br(args { opcode: message_type })]
     payload: GenericPacket,
 }
 
+
+#[binrw]
+#[br(import {opcode: MessageType })]
+#[derive(Debug)]
+pub enum GenericPacket {
+    ControlChannelPacket(
+        #[br(args { opcode })]
+        ControlChannelPacket
+    ),
+    DataPacket(
+        #[br(args { opcode })]
+        DataChannelPacket
+    ),
+}
+
 impl ReadEndian for OpenVPNPacket {
-    const ENDIAN: EndianKind = EndianKind::Endian(Little);
+    const ENDIAN: EndianKind = EndianKind::Endian(Big);
 }
 
 impl WriteEndian for OpenVPNPacket {
-    const ENDIAN: EndianKind = EndianKind::Endian(Little);
-}
-
-impl OpenVPNPacket {
-    pub fn new(_type: MessageType, payload: GenericPacket) -> Self {
-        Self {
-            message_type: _type,
-            key_id: 0, // TODO
-            payload: payload,
-        }
-    }
-}
-
-#[binrw]
-#[br(import(len: u16))]
-pub enum GenericPacket {
-    CiphertextControlPacket(CiphertextControlPacket),
-    PlaintextControlPacket(PlaintextControlPacket), // Obsolete?
-    DataPacket(DataPacket),
-}
-
-impl GenericPacket {
-    pub fn len(&self) -> usize {
-        match self {
-            GenericPacket::CiphertextControlPacket(p) => p.len(),
-            GenericPacket::PlaintextControlPacket(p) => p.len(),
-            GenericPacket::DataPacket(p) => p.len(),
-        }
-    }
-}
-
-#[binrw]
-#[br(import(len: u16))]
-pub struct CiphertextControlPacket {
-    session_id: u64,
-
-    #[brw(if(true))] // Fix byte count
-    hmac: [u8; 16], // Only if --tls-auth?
-
-    replay_packet_id: u64,
-
-    packet_ack_len: u32,
-    #[br(count = packet_ack_len)]
-    packet_acks: Vec<PacketAck>, // include peer_session_id if len > 0
-
-    // TODO: This will read EVERYTHING, including possibly other packets. Make sure that this only reads to the
-    // End of the packet -- maybe read a packet from the stream into a n byte stream that can be transformed.
-    #[br(parse_with = until_eof)]
-    payload: Vec<u8>,
-}
-
-impl CiphertextControlPacket {
-    pub fn len(&self) -> usize {
-        8 + if true { 16 } else { 0 }
-            + 8
-            + 4
-            + size_of::<PacketAck>() * self.packet_ack_len as usize
-            + self.payload.len()
-    }
-}
-
-#[binrw]
-pub struct PlaintextControlPacket {
-    #[brw(magic = 0u32)]
-    magic: u32,
-
-    key_method: u8,
-    key_source: u8,
-
-    options_len: u16,
-    #[br(count = options_len)]
-    options: Vec<u8>,
-
-    user_len: u16,
-    #[br(count = user_len)]
-    username: Vec<u8>,
-
-    pass_len: u16,
-    #[br(count = pass_len)]
-    password: Vec<u8>,
-}
-
-impl PlaintextControlPacket {
-    pub fn len(&self) -> usize {
-        4 + 1
-            + 1
-            + 2
-            + self.options_len as usize
-            + 2
-            + self.user_len as usize
-            + 2
-            + self.pass_len as usize
-    }
-}
-
-impl !Default for DataPacket {}
-
-#[binrw]
-#[br(import(len: u8))]
-#[derive(Debug)]
-pub struct DataPacket {
-    // 24-bits
-    #[br(parse_with = binrw::helpers::read_u24)]
-    #[bw(write_with = binrw::helpers::write_u24)]
-    peer_id: u32,
-
-    #[br(count = AuthType::auth_len(AuthType::CBC))]
-    auth_data: Vec<u8>,
-
-    #[br(count = 4)]
-    payload: Vec<u8>,
-}
-
-impl DataPacket {
-    // pub fn new() -> Self {
-    //     Self {}
-    // }
-
-    pub fn len(&self) -> usize {
-        100
-    }
-}
-
-
-impl ReadEndian for DataPacket {
-    const ENDIAN: EndianKind = EndianKind::Endian(Little);
-}
-
-impl WriteEndian for DataPacket {
-    const ENDIAN: EndianKind = EndianKind::Endian(Little);
+    const ENDIAN: EndianKind = EndianKind::Endian(Big);
 }

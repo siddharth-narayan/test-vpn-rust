@@ -8,7 +8,7 @@ use pnet::packet::{
     Packet, ip::{IpNextHeaderProtocol, IpNextHeaderProtocols}, ipv4::Ipv4Packet, tcp::TcpPacket, udp::UdpPacket
 };
 
-use crate::network::{packet::{BasePacket, PacketRepr}, util::PacketProtocol};
+use crate::network::{packet::BasePacket, util::PacketProtocol};
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct NatEntry {
@@ -75,7 +75,7 @@ impl NatTable {
         }
     }
 
-    pub fn insert(&mut self, e: NatEntry, sender: Sender<BasePacket>) {}
+    pub fn insert(&mut self, _e: NatEntry, _sender: Sender<BasePacket>) {}
 
     pub fn lookup(&self, e: NatEntry) -> Option<Sender<BasePacket>> {
         let guard = self.table.lock().unwrap();

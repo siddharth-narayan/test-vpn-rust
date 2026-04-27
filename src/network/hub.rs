@@ -119,7 +119,7 @@ impl Hub {
     }
 }
 
-fn hub_packet_processor(hub_rx: Receiver<BasePacket>, mut tun: Device, table: HubClientTable) {
+fn hub_packet_processor(hub_rx: Receiver<BasePacket>, mut tun: Device, _table: HubClientTable) {
     loop {
         match hub_rx.try_recv() {
             Ok(p) => {

@@ -44,7 +44,7 @@ impl<T: Read + Write> Read for BufferedSsl<T> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self.inner.ssl_read(buf) {
             Ok(s) => Ok(s),
-            Err(e) => Err(std::io::Error::last_os_error())
+            Err(_e) => Err(std::io::Error::last_os_error())
         }
     }
 }
@@ -53,7 +53,7 @@ impl<T: Read + Write> Write for BufferedSsl<T> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         match self.inner.ssl_write(buf) {
             Ok(s) => Ok(s),
-            Err(e) => Err(std::io::Error::last_os_error())
+            Err(_e) => Err(std::io::Error::last_os_error())
         }
     }
 
